@@ -1,0 +1,32 @@
+{
+  "name": "temp",
+  "version": "1.0.0",
+  "main": "main.js",
+  "type": "module",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "pkg": {
+    "options": {
+      "resolve": true
+    },
+    "outputPath": "dist"
+  },
+  "scripts": {
+    "dev": "node main.js",
+    "test": "clear&&npm run dev",
+    "bundle": "npx webpack --config webpack.config.js --progress",
+    "build": "pkg ./dist/bundle/bundle.js --target latest-win-x64 --output dist/temp.exe"
+  },
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "crypto-js": "^4.2.0",
+    "exceljs": "^4.4.0",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "webpack-cli": "^5.1.4"
+  }
+}
