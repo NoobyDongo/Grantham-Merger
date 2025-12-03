@@ -16,7 +16,7 @@
     "dev": "node main.js",
     "test": "clear&&npm run dev",
     "bundle": "npx webpack --config webpack.config.js --progress",
-    "build": "pkg ./dist/bundle/bundle.js --target latest-win-x64 --output dist/temp.exe"
+    "build": "node _build.js"
   },
   "author": "",
   "license": "ISC",

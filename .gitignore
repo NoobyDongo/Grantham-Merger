@@ -9,9 +9,13 @@
 # testing
 /coverage
 
-# next.js
-/.next/
-/out/
+/dist
+/old
+*xls
+/_output
+/_put your excels here
+/config.json
+/_run.cmd
 
 # production
 /build

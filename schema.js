@@ -1,6 +1,6 @@
-import crypto from 'crypto'
-
 // #region Definitions
+
+import { grantham_start_month, grantham_start_year } from "./main.js"
 
 ///=================================================================================================
 //
@@ -8,102 +8,108 @@ import crypto from 'crypto'
 //
 ///=================================================================================================
 
-const enrollment = '期數',
-  enrollment_eng = 'DVE Entry',
-  ename = '英文姓名',
-  cname = '中文姓名',
-  wayout_cname = '學生姓名',
-  hkId = '身份證號碼',
-  className1 = '學期',
-  className2 = '班別',
-  className = '班別',
-  vdpId = 'VDP 編號',
-  guide_name = '學生輔導主任',
-  diploma_id = '課程編號',
-  diploma_name = '課程名稱',
-  programme_campus = '上課地點',
-  wayout_programme = '詳情',
-  master_remark = '評語',
-  programmeClass_name = 'Class',
-  programmeClass_name2 = '(總表 DVE Class)',
+const enrollment = "期數",
+  enrollment_eng = "DVE Entry",
+  ename = "英文姓名",
+  cname = "中文姓名",
+  wayout_cname = "學生姓名",
+  hkId = "身份證號碼",
+  className1 = "學期",
+  className2 = "班別",
+  vdpId = "VDP 編號",
+  guide_name = "學生輔導主任",
+  diploma_id = "課程編號",
+  diploma_name = "課程名稱",
+  programme_campus = "上課地點",
+  wayout_programme = "詳情",
+  master_remark = "評語",
+  programmeClass_name = "Class",
+  programmeClass_name2 = "(總表 DVE Class)",
+  //header for class tutor info would already be parsed by remakeTutorHeaders in main.js
   programmeClass_generic = {
-    name: 'Class Tutor (Generic, Fullname)',
-    email: 'Email (Generic)'
+    name: "Class Tutor (Generic, Fullname)",
+    email: "Email (Generic)",
   },
   programmeClass_trade = {
-    name: 'Class Tutor (Trade, Fullname)',
-    email: 'Email (Trade)'
+    name: "Class Tutor (Trade, Fullname)",
+    email: "Email (Trade)",
   },
-  awardYear = '(得獎年份)',
-  dereg = '(Dereg/Grad)'
+  awardYear = "(得獎年份)",
+  dereg = "(Dereg/Grad)"
 
-export const remarkRegex = new RegExp(master_remark, 'g')
+export const remarkRegex = new RegExp(master_remark, "g")
 
-const weakClassname = 'TC00N00AA0AA'
+const weakClassname = "TC00N00AA0AA"
 
 //==================================
 // Regex
 //==================================
 
 const regex = {
-  className1_1: new RegExp('^\\d{2}[A-Z]{1}\\d{2}$', 'i'),
-  className1_2: new RegExp('^[A-Z]{2,3}\\d{1}[A-Z]{2}$', 'i'),
+  className1_1: new RegExp("^\\d{2}[A-Z]{1}\\d{2}$", "i"),
+  className1_2: new RegExp("^[A-Z]{2,3}\\d{1}[A-Z]{2}$", "i"),
 
-  className: new RegExp('^TC\\d{2,3}[A-Z]\\d{2}[A-Z]{2,3}\\d[A-Z]{2}$', 'i'),
+  className: new RegExp("^TC\\d{2,3}[A-Z]\\d{2}[A-Z]{2,3}\\d[A-Z]{2}$", "i"),
 
   //18N01 OATM? && 18N02 SFTO from master 2020
-  classNameRare: new RegExp('^[A-Z]{4}$', 'i'),
+  classNameRare: new RegExp("^[A-Z]{4}$", "i"),
 
   //around 2015 from award
-  className3_1: new RegExp('^\\d{2}[A-Z]{1}\\d{2}$', 'i'),
-  className3_2: new RegExp('^[A-Z]{2,3}\\d{1}[A-Z]{2,3}$', 'i'),
+  className3_1: new RegExp("^\\d{2}[A-Z]{1}\\d{2}$", "i"),
+  className3_2: new RegExp("^[A-Z]{2,3}\\d{1}[A-Z]{2,3}$", "i"),
 
   //around 2010 from award
-  className2_1: new RegExp('^\\d{2,3}[A-Z]{2,3}$', 'i'),
-  className2_2: new RegExp('^[A-Z]{1,3}$', 'i'),
+  className2_1: new RegExp("^\\d{2,3}[A-Z]{2,3}$", "i"),
+  className2_2: new RegExp("^[A-Z]{1,3}$", "i"),
 
-  entry: new RegExp('^\\d{4}/\\d{2}$'),
+  entry: new RegExp("^\\d{4}/\\d{2}$"),
 
   details: new RegExp(
-    '[A-Z]{2}\\d{6}[A-Z]?\\s?-\\s?.+\\s?-\\s?(IVE\\([A-Z]{2,3}\\)|YC\\([A-Z]{2,3}\\)|CCI|HKDI)',
-    'i'
+    "[A-Z]{2}\\d{6}[A-Z]?\\s?-\\s?.+\\s?-\\s?(IVE\\([A-Z]{2,3}\\)|YC\\([A-Z]{2,3}\\)|CCI|HKDI|[A-Z]{2,10})", //i give up
+    "i"
   ),
 
   // 818/16/pc, 404/22/PDFB
-  class_complex: new RegExp('.{2,3}\\/.{2}\\/.{2,4}'),
+  class_complex: new RegExp(".{2,3}\\/.{2}\\/.{2,4}"),
   // AB123456, AB123456A, AB123456/12/AB
   class_withProgrammeCode: new RegExp(
-    '^[A-Z]{2}\\d{6}[A-Z]?(-|\\s|/\\d{2}(/[A-Z]{2})?)?$',
-    'i'
+    "^[A-Z]{2}\\d{6}[A-Z]?(-|\\s|/\\d{2}(/[A-Z]{2})?)?$",
+    "i"
+  ),
+  // seeing new things everyday
+  class_withProgrammeCodeAndClassWithNoSpace: new RegExp(
+    "^[A-Z]{2}\\d{6}[A-Z]?.{2,5}$",
+    "i"
   ),
   // AB123456/AB, AB123456/ABCD, AB123456/11AB, AB123456A/1D, AB123456A/A1D, AB123456/ddd2a
   class_programmeCodeWithClass: new RegExp(
-    '^[A-Z]{2}\\d{6}[A-Z]?/.{2,5}$',
-    'i'
+    "^[A-Z]{2}\\d{6}[A-Z]?/.{2,5}$",
+    "i"
   ),
   // A1A, V12c, a-1d, d1, A11A, 1A, 11A
-  class_pure: new RegExp('^([A-Z]|[A-Z]-)?\\d{1,2}[A-Z][A-Z]?$', 'i'),
-  class_veryPure: new RegExp('^[A-Z]{1}$', 'i'),
+  class_pure: new RegExp("^([A-Z]|[A-Z]-)?\\d{1,2}[A-Z][A-Z]?$", "i"),
+  class_veryPure: new RegExp("^[A-Z]{1}$", "i"),
 
-  programmeCode_pure: new RegExp('^[A-Z]{2}\\d{6}$', 'i'),
-  programmeCode_variant: new RegExp('^[A-Z]{2}\\d{6}[A-Z]{1,2}$', 'i'),
-  programmeName_variant: new RegExp('^.*[A-Z]{1,2}$', 'i'),
+  programmeCode_pure: new RegExp("^[A-Z]{2}\\d{6}$", "i"),
+  programmeCode_variant: new RegExp("^[A-Z]{2}\\d{6}[A-Z]{1,2}$", "i"),
+  programmeName_variant: new RegExp("^.*[A-Z]{1,2}$", "i"),
 
-  no: /(dereg|grad|no|de-reg|defer|quit|withdraw)/i,
+  //                                  bro i swear i had seen everything
+  no: /(dereg|grad|no|de-reg|defer|quit|withdraw|granduated|transferred out)/i,
 
   //so sad
   masterNo:
-    /(dereg|de-reg|defer|quit|withdraw|employ|退學(?!未)|no record|no this student|no data|no student|not found|unable to locate)/i,
+    /(dereg|de-reg|defer|quit|withdraw|employ|(?!未)退學|no record|no this student|no data|沒記錄|(?!未)畢業|no student|not found|unable to locate)/i,
 
-  hkIdStrict: new RegExp('^[A-Z]{1,2}\\d{6}\\([0-9A]\\)$', 'i'),
-  hkId: new RegExp('^[A-Z]{1,2}\\d{6}\\(?[0-9A]\\)?$', 'i'),
+  hkIdStrict: new RegExp("^[A-Z]{1,2}\\d{6}\\([0-9A]\\)$", "i"),
+  hkId: new RegExp("^[A-Z]{1,2}\\d{6}\\(?[0-9A]\\)?$", "i"),
 
-  empty: new RegExp('n[/\\\\]?a', 'i'),
+  empty: new RegExp("n[/\\\\]?a", "i"),
   space: new RegExp(
-    '[\t\n\v\f\r \u00a0\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u200b\u2028\u2029\u3000]+'
+    "[\t\n\v\f\r \u00a0\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u200b\u2028\u2029\u3000]+"
   ),
 
-  campus: new RegExp('^HTI|CCI|ICI|YC\\(.*\\)|IVE\\(.*\\)$', 'i')
+  campus: new RegExp("^HTI|CCI|ICI|YC\\(.*\\)|IVE\\(.*\\)$", "i"),
 }
 
 //==================================
@@ -116,125 +122,178 @@ const xl = 20,
   sm = 7.5,
   xs = 5
 
+const _className = {
+  classname1: {
+    name: [className1, "teens entry"],
+    set: (record) => record.className?.slice(2, 7),
+    get: (record) =>
+      removeSpace(
+        getParsedValue(record, _className.classname1, [
+          regex.className1_1,
+          regex.className2_1,
+          regex.className3_1,
+        ])
+      ),
+  },
+  classname2: {
+    name: [className2, "course", "teens class"],
+    set: (record) => record.className?.slice(7),
+    get: (record) => {
+      const c2 = removeSpace(
+        getParsedValue(record, _className.classname2, [
+          regex.className1_2,
+          regex.className2_2,
+          regex.className3_2,
+        ])
+      )
+
+      if (c2 && regex.classNameRare.test(c2))
+        return c2.slice(0, 2) + "1" + c2.slice(2)
+      return c2
+    },
+  },
+}
+
+const getParsedValue = (obj, def, formats, checker) => {
+  const names = def.name || def
+
+  let pendingNames = Array.isArray(names) ? [...names] : [names],
+    value,
+    name
+
+  while (!value && (name = pendingNames.shift())) {
+    if (
+      obj[name] !== null &&
+      obj[name] !== undefined &&
+      spaceChecker(checker ? checker(`${obj[name]}`) : obj[name])
+    )
+      value = `${obj[name]}`
+  }
+
+  if (
+    value &&
+    (formats
+      ? Array.isArray(formats)
+        ? formats.some((f) => f.test(value))
+        : formats.test(value)
+      : true)
+  )
+    return value
+  else return null
+}
+const removeSpace = (str) => (str ? `${str}`.replace(regex.space, "") : null)
+const formatSpace = (str) =>
+  str ? `${str}`.replace(regex.space, " ").trim() : null
+
+const spaceChecker = (value) => Boolean(removeSpace(value))
+
 const _base = {
   entryDate: {
-    name: [enrollment_eng, enrollment, ''],
-    get: record => {
-      let entry
-      if (record[enrollment] && regex.entry.test(record[enrollment])) {
-        entry = record[enrollment]
-      } else if (
-        record[enrollment_eng] &&
-        regex.entry.test(record[enrollment_eng])
-      ) {
-        entry = record[enrollment_eng]
-      }
+    name: [enrollment_eng, enrollment, ""],
+    get: (record) => {
+      let entry = removeSpace(
+        getParsedValue(record, _base.entryDate, regex.entry)
+      )
+
       if (!entry) return null
-      entry = entry.split('/')
+
+      entry = `${entry}`.match(regex.entry)?.[0]?.split("/")
+
       return {
         year: entry[0],
-        month: entry[1]
+        month: entry[1],
       }
     },
-    set: record =>
-      record.year && record.month
-        ? record.year + '/' + record.month.toString().padStart(2, '0')
-        : null
+    set: (record) => {
+      if (!(record.year && record.month)) {
+        return null
+      }
+      let entry = record.year + "/" + record.month.toString().padStart(2, "0")
+
+      // if (!record.__entry && !record.___forCampus) {
+      //   return `[${entry}]`
+      // }
+      return entry
+    },
   },
   ename: {
-    name: [ename, ''],
-    get: record =>
-      record[ename]
-        ? `${record[ename]}`.trim().replace(regex.space, ' ')
-        : null,
-    set: record => record.ename,
-    width: md
+    name: [ename, "English name", "Eng name", ""],
+    get: (record) =>
+      formatSpace(
+        getParsedValue(record, _base.ename)?.replace(regex.space, " ")
+      ),
+    set: (record) => record.ename,
+    width: md,
   },
   cname: {
-    name: [cname, wayout_cname, ''],
-    get: record =>
-      record[cname]
-        ? record[cname]
-          ? `${record[cname]}`.trim().replace(regex.space, '')
-          : null
-        : record[wayout_cname]
-        ? `${record[wayout_cname]}`?.trim().replace(regex.space, '')
-        : null,
-    set: record => record.cname
+    name: [cname, wayout_cname, "Chinese name", "Chi name", ""],
+    get: (record) =>
+      formatSpace(
+        getParsedValue(record, _base.cname)?.replace(regex.space, " ")
+      ),
+    set: (record) => record.cname,
   },
   hkId: {
-    name: [hkId, ''],
-    get: record => {
-      let id = record[hkId]
-        ? `${record[hkId]}`.toUpperCase().replace(regex.space, '')
-        : null
-      if (regex.hkId.test(id)) {
-        if (!regex.hkIdStrict.test(id)) {
-          id = id.replace(/^([A-Z]{1,2}\d{6})([0-9A])$/i, '$1($2)')
-        }
+    name: [hkId, "ID", ""],
+    get: (record) => {
+      let id = removeSpace(
+        getParsedValue(record, _base.hkId, [
+          regex.hkId,
+          regex.hkIdStrict,
+        ])?.replace(regex.space, "")
+      )
 
-        return id
+      if (id && !regex.hkIdStrict.test(id)) {
+        id = id.replace(/^([A-Z]{1,2}\d{6})([0-9A])$/i, "$1($2)")
       }
-      return null
+
+      return id
     },
-    set: record => record.hkId
+    set: (record) => record.hkId,
   },
   className: {
-    name: [className1, className2, ''],
-    get: record => {
+    name: [
+      ...Object.values(_className)
+        .map((e) => e.name)
+        .flat(),
+      "",
+    ],
+    get: (record) => {
       let className
-      if (record[className1]) {
-        className = `${record[className1]}`?.replace(regex.space, '')
-      } else if (record[className2]) {
-        className = `${record[className2]}`?.replace(regex.space, '')
-      } else return weakClassname
 
-      if (regex.className.test(className)) return className
-      else if (checkKeys(record, [className1, className2])) {
-        const c1 = `${record[className1]}`?.replace(regex.space, '')
-        const _c2 = `${record[className2]}`?.replace(regex.space, '')
-        const c2 = regex.classNameRare.test(_c2)
-          ? _c2.slice(0, 2) + '1' + _c2.slice(2)
-          : _c2
+      const c1 = _className.classname1.get(record)
+      const c2 = _className.classname2.get(record)
 
-        className = 'TC' + c1 + c2
-        if (
-          (regex.className3_1.test(c1) && regex.className3_2.test(c2)) ||
-          (regex.className2_1.test(c1) && regex.className2_2.test(c2)) ||
-          (regex.className1_1.test(c1) && regex.className1_2.test(c2))
+      if (c1 && c2) className = `TC${c1}${c2}`
+      else
+        className = removeSpace(
+          getParsedValue(record, _base.className, regex.className)
         )
-          return className
-      }
+
+      if (className && regex.className.test(className)) return className
       return weakClassname
     },
-    set: record => record.classname
-  }
+    set: (record) => record.classname,
+  },
 }
 
 const _guide = {
-  name: guide_name,
-  get: record => {
-    let name = record[guide_name]
-    if (name) {
-      name = `${name}`.replace(regex.space, ' ')
-      return { name }
-    }
-    return null
-  },
-  set: record => record.guide?.name,
-  width: sm
+  name: [guide_name, "SC"],
+  get: (record) => formatSpace(getParsedValue(record, _guide)),
+  set: (record) => record.guide,
+  width: sm,
 }
 
 const _vdpId = {
-  name: vdpId,
-  get: record => record[vdpId],
-  set: record => record.vdpId
+  name: [vdpId, "VDPID"],
+  get: (record) => removeSpace(getParsedValue(record, _vdpId)),
+  set: (record) => record.vdpId,
 }
 
 const _dereg = {
   name: dereg,
   get: (className, error, generic, trade) => {
-    let isDereg = true
+    let isDereg = false
 
     if (className != undefined && className != null) {
       let badClassName = !(
@@ -242,33 +301,36 @@ const _dereg = {
         regex.class_veryPure.test(className) ||
         regex.class_complex.test(className) ||
         regex.class_withProgrammeCode.test(className) ||
+        // regex.class_withProgrammeCodeAndClassWithNoSpace.test(className) ||
         regex.class_programmeCodeWithClass.test(className)
       )
 
-      if (badClassName) {
-        if (!regex.no.test(className)) {
+      const hasCurseWord =
+        regex.no.test(className) || regex.masterNo.test(className)
+
+      if (hasCurseWord) {
+        ReturnWarning(
+          error,
+          `Possibly Deregistered Student, please confirm`,
+          errors.critical
+        )
+        isDereg = true
+      } else if (badClassName) {
+        if (!regex.no.test(className) && !regex.masterNo.test(className)) {
           ReturnWarning(error, `DVE Class Unexpected Format`, errors.important)
           isDereg = false
-        } else {
-          ReturnWarning(
-            error,
-            `Possibly Deregistered Student, please confirm`,
-            errors.critical
-          )
-          isDereg = true
         }
-      } else {
+      } else if (!hasCurseWord) {
         if (!generic && !trade) {
           ReturnWarning(error, `DVE Class has No tutor`, errors.minor)
         }
-        isDereg = false
       }
     }
 
     return isDereg
   },
-  set: record => (record.dereg ? 'TRUE' : ''),
-  style: 'system'
+  set: (record) => (record.dereg ? "TRUE" : ""),
+  style: "system",
 }
 
 //==================================
@@ -280,17 +342,17 @@ const _diplomaNameStore = new Map()
 
 //==================================
 
-function getFromStore (store, key) {
+function getFromStore(store, key) {
   let obj = store.get(key)
   return obj
 }
 
-function parseCampus (campus) {
+function parseCampus(campus) {
   if (!campus) return null
   if (/HTI|CCI|ICI/.test(campus)) {
-    campus = 'HTI/CCI'
+    campus = "HTI/CCI"
   }
-  campus = campus.replace(regex.space, '').replace(/POKFULAM/g, 'PF')
+  campus = campus.replace(regex.space, "").replace(/POKFULAM/g, "PF")
 
   if (!regex.campus.test(campus)) campus = `YC(${campus})`
 
@@ -298,129 +360,130 @@ function parseCampus (campus) {
 }
 
 const _diploma = {
-  get: record => {
-    if (checkKeys(record, [diploma_id, diploma_name], false)) {
-      let diploma
-      let id = record[diploma_id] ? `${record[diploma_id]}`.toUpperCase() : null
-      let name = record[diploma_name]
-        ? `${record[diploma_name]}`.replace('（', '(').replace('）', ')')
-        : null
-      let shortenIndexFlag = { flag: false }
-
-      if (id) {
-        diploma = getFromStore(_diplomaIdStore, id, shortenIndexFlag)
-        if (!diploma) {
-          diploma = name
-            ? getFromStore(_diplomaNameStore, name, shortenIndexFlag)
-            : null
-          if (!diploma) {
-            diploma = { id, name }
-          } else {
-            if (!diploma.id) diploma.id = id
-            if (!diploma.name && name) diploma.name = name
-          }
-          _diplomaIdStore.set(id, diploma)
-          if (name) _diplomaNameStore.set(name, diploma)
-        } else {
-          if (!diploma.name && name) diploma.name = name
-          if (name) _diplomaNameStore.set(name, diploma)
-        }
-      } else if (name) {
-        diploma = getFromStore(_diplomaNameStore, name)
-        if (!diploma) {
-          diploma = { id: null, name }
-          _diplomaNameStore.set(name, diploma)
-        }
-      }
-
-      return diploma
-    }
-    return null
-  },
   id: {
-    name: diploma_id,
-    get: record => record[diploma_id],
-    set: record => record.programme?.diploma?.id || record.diploma?.id
+    name: [diploma_id, "DVE Programme Offered"],
+    get: (record) =>
+      removeSpace(getParsedValue(record, _diploma.id)?.toUpperCase()),
+    set: (record) => record.programme?.diploma?.id || record.diploma?.id,
   },
   name: {
-    name: diploma_name,
+    name: [diploma_name, "Programme"],
     width: lg,
-    get: record => record[diploma_name],
-    set: record => record.programme?.diploma?.name || record.diploma?.name
-  }
+    get: (record) =>
+      removeSpace(
+        getParsedValue(record, _diploma.name)
+          ?.replace("（", "(")
+          ?.replace("）", ")")
+      ),
+    set: (record) => record.programme?.diploma?.name || record.diploma?.name,
+  },
+
+  get: (record) => {
+    let diploma = null
+
+    const id = _diploma.id.get(record)
+    const name = _diploma.name.get(record)
+
+    let shortenIndexFlag = { flag: false }
+
+    if (id) {
+      diploma = getFromStore(_diplomaIdStore, id, shortenIndexFlag)
+      if (!diploma) {
+        diploma = name
+          ? getFromStore(_diplomaNameStore, name, shortenIndexFlag)
+          : null
+        if (!diploma) {
+          diploma = { id, name }
+        } else {
+          if (!diploma.id) diploma.id = id
+          if (!diploma.name && name) diploma.name = name
+        }
+        _diplomaIdStore.set(id, diploma)
+        if (name) _diplomaNameStore.set(name, diploma)
+      } else {
+        if (!diploma.name && name) diploma.name = name
+        if (name) _diplomaNameStore.set(name, diploma)
+      }
+    } else if (name) {
+      diploma = getFromStore(_diplomaNameStore, name)
+      if (!diploma) {
+        diploma = { id: null, name }
+        _diplomaNameStore.set(name, diploma)
+      }
+    }
+
+    return diploma
+  },
 }
 
 const _campus = {
-  name: programme_campus,
-  get: record => {
-    if (!record[programme_campus]) return null
+  name: [programme_campus, "Campus"],
+  get: (record) =>
+    parseCampus(removeSpace(getParsedValue(record, _campus)?.toUpperCase())),
+  set: (record) => record.programme?.campus || record.campus || null,
+}
 
-    let campus = `${record[programme_campus]}`
-      ?.toUpperCase()
-      .replace(regex.space, '')
-
-    campus = parseCampus(campus)
-
-    return {
-      id: campus
-    }
-  },
-  set: record => record.programme?.campus?.id || record.campus?.id
+const _wayout_remark = {
+  name: ["(Wayout Remark)", wayout_programme],
+  get: (record) => formatSpace(getParsedValue(record, _wayout_remark)),
+  set: (record) => record.remark,
+  width: xl,
+  style: "system",
 }
 
 const _programme = {
-  get: record => {
-    let details = record[wayout_programme],
-      campus = {},
+  campus: _campus,
+  diploma: _diploma,
+  get: (record) => {
+    let remark = _wayout_remark.get(record)
+
+    let campus = null,
       diploma = {}
 
-    if (details) {
-      let passed = regex.details.test(details)
-      if (passed) {
-        details = `${details}`
-          .match(regex.details)[0]
-          .split('-')
-          .map(e => e.replace(regex.space, ''))
-        ;[diploma.id, diploma.name, campus.id] = [
-          details[0]?.toUpperCase(),
-          details
-            .slice(1, details.length - 1)
-            .join('-')
-            .replace('（', '(')
-            .replace('）', ')'),
-          details[details.length - 1]
-        ]
-      }
-      record.remark = record[wayout_programme]
+    if (remark && regex.details.test(remark)) {
+      remark = `${remark}`
+        .match(regex.details)[0]
+        .split("-")
+        .map((e) => e.replace(regex.space, ""))
+      ;[diploma.id, diploma.name, campus] = [
+        remark[0]?.toUpperCase(),
+        remark
+          .slice(1, remark.length - 1)
+          .join("-")
+          .replace("（", "(")
+          .replace("）", ")"),
+        remark[remark.length - 1],
+      ]
+      remark = remark.join("-")
     } else if ((diploma = _diploma.get(record)) != null) {
       campus = _campus.get(record)
     }
-    campus.id = parseCampus(campus.id)
-    // if(!(campus?.id && diploma?.id) && (campus?.id || diploma?.id)) {
-    //     console.log(record, campus, diploma)
-    //     throw new Error('Campus or Diploma ID missing')
-    // }
-    return campus?.id && diploma?.id ? { diploma, campus } : null
+
+    campus = parseCampus(campus)
+    return campus && diploma?.id
+      ? { diploma, campus, remark }
+      : remark
+      ? { remark }
+      : null
   },
-  campus: _campus,
-  diploma: _diploma
 }
 
+//remained unchanged, as these headers are parsed seperatly
 const [_trade, _generic] = [
-  { key: 'trade', value: programmeClass_trade },
-  { key: 'generic', value: programmeClass_generic }
+  { key: "trade", value: programmeClass_trade },
+  { key: "generic", value: programmeClass_generic },
 ].map(({ key, value }) => ({
-  get: record => {
+  get: (record) => {
     if (checkKeys(record, [value.name, value.email])) {
       const name = record[value.name]
-      const email = (record[value.email] + '')
-        .split('@')[0]
+      const email = (record[value.email] + "")
+        .split("@")[0]
         ?.trim()
         ?.toLowerCase()
       if (email && !(regex.empty.test(email) || regex.space.test(email))) {
         return {
-          name: `${name}`.replace(regex.space, '_').replace(/_+/g, ' ').trim(),
-          email: email
+          name: `${name}`.replace(regex.space, "_").replace(/_+/g, " ").trim(),
+          email: email,
         }
       }
     }
@@ -428,36 +491,36 @@ const [_trade, _generic] = [
   },
   name: {
     name: value.name,
-    get: record => record[value.name],
-    set: record => record[key]?.name || null,
-    width: sm
+    get: (record) => record[value.name],
+    set: (record) => record[key]?.name || null,
+    width: sm,
   },
   email: {
     name: value.email,
-    get: record => record[value.email],
-    set: record => record[key]?.email || null,
-    width: sm
-  }
+    get: (record) => record[value.email],
+    set: (record) => record[key]?.email || null,
+    width: sm,
+  },
 }))
 
 const _programmeClass = {
   name: {
     name: [programmeClass_name, programmeClass_name2],
-    get: record => {
-      let name = record[programmeClass_name] || record[programmeClass_name2]
-      if (name) {
-        name = `${name}`.replace(regex.space, '')
-        return name
-      }
-      return null
-    },
-    set: record =>
-      record.programmeClass_name ||
-      // || record.programmeClass
-      null
+    //this is so sad, the logic is scattered elsewhere,
+    //since i am not changing records directly in get functions
+    //and this uses the dereg status
+    get: (record) => removeSpace(getParsedValue(record, _programmeClass.name)),
+    set: (record) => record.programmeClass_name || null,
   },
   generic: _generic,
-  trade: _trade
+  trade: _trade,
+}
+
+const _award_year = {
+  name: [awardYear, "award year"],
+  get: (record) => record[awardYear],
+  set: (record) => record.awardYear,
+  style: "system",
 }
 
 //#endregion
@@ -470,44 +533,19 @@ const _programmeClass = {
 //
 ///=================================================================================================
 
-function hashStringSync (message) {
-  return crypto.createHash('sha256').update(message).digest('hex')
-}
-
-function checkKey (key, record) {
-  if (key == '') return true
+function checkKey(key, record) {
+  if (key == "") return true
   let value = record[key]
   if (value === undefined) return false
   if (value === null) return false
-  if (`${value}`.replace(regex.space, '') == '') return false
+  if (`${value}`.replace(regex.space, "") == "") return false
   return true
 }
 
-function parsefieldNames (fields) {
-  return fields
-    .filter(name => !!name)
-    .map(name => `{${name}}`)
-    .join('/')
-}
-
-function checkKeys (record, names, strict = true) {
+function checkKeys(record, names, strict = true) {
   return strict
-    ? names.every(name => checkKey(name, record))
-    : names.some(name => checkKey(name, record))
-}
-
-function checkEachKey (record, checkers, strict = true) {
-  let errorFields = new Set()
-  for (const names of checkers) {
-    let valid = strict
-      ? names.every(name => checkKey(name, record))
-      : names.some(name => checkKey(name, record))
-
-    if (!valid) {
-      errorFields.add(parsefieldNames(names))
-    }
-  }
-  return errorFields
+    ? names.every((name) => checkKey(name, record))
+    : names.some((name) => checkKey(name, record))
 }
 
 //#endregion
@@ -524,9 +562,9 @@ function checkEachKey (record, checkers, strict = true) {
 // Error / Warning
 //==================================
 
-function Return (record, error, level, key = '__error') {
-  const levelKey = key + 'Level'
-  const additionalKey = '__additional' + key
+function Return(record, error, level, key = "__error") {
+  const levelKey = key + "Level"
+  const additionalKey = "__additional" + key
 
   let overwrite = record[levelKey] ? level <= record[levelKey] : true
   if (overwrite) {
@@ -544,18 +582,18 @@ function Return (record, error, level, key = '__error') {
   return record
 }
 
-function ReturnError (record, error, level) {
+function ReturnError(record, error, level) {
   return Return(record, error, level)
 }
 
-function ReturnWarning (record, error, level) {
-  return Return(record, error, level, '__warning')
+function ReturnWarning(record, error, level) {
+  return Return(record, error, level, "__warning")
 }
 
 const errors = {
   critical: 1,
   important: 2,
-  minor: 3
+  minor: 3,
 }
 
 const errorsFlipped = Object.keys(errors).reduce((acc, key) => {
@@ -567,14 +605,14 @@ const errorsFlipped = Object.keys(errors).reduce((acc, key) => {
 // Parser
 //==================================
 
-const baseChecker = Object.keys(_base).map(key => _base[key].name)
+const baseChecker = Object.keys(_base).map((key) => _base[key].name)
 
 const checkProgrammeClass = (error, record) => {
   let hasTeacher = !!record.generic || !!record.trade
   if (
     !record.awardYear &&
     record.__programmeClass &&
-    !record.campus?.id &&
+    !record.campus &&
     hasTeacher
   ) {
     ReturnWarning(
@@ -609,13 +647,23 @@ const checkProgrammeClass = (error, record) => {
 }
 
 const checkEntry = (error, record) => {
-  // if (!record.awardYear && (!record.year || !record.month) && !record.year === 0) {
-  //   ReturnError(
-  //     error,
-  //     `${enrollment_eng}/${enrollment} is Missing/Incorrect (YYYY/MM, eg:2024/09), student will not get nominated`,
-  //     errors.minor
-  //   )
-  // }
+  record.__inRange = true
+
+  if (!record.__entry) {
+    ReturnWarning(error, `Using default DVE entry`, errors.minor)
+    record.year = record.__year
+    record.month = 9
+  } else if (
+    record.year < grantham_start_year ||
+    (record.year == grantham_start_year && record.month < grantham_start_month)
+  ) {
+    record.__inRange = false
+    ReturnWarning(
+      error,
+      `Out of DVE selection range ${grantham_start_year}/${grantham_start_month}`,
+      errors.minor
+    )
+  }
 }
 
 const checkId = (error, record) => {
@@ -625,6 +673,20 @@ const checkId = (error, record) => {
       `Unique identifier missing, it has no ${className1}/${className2}(TC...) and ${cname}`,
       errors.critical
     )
+  }
+  // no error so the record falls to the success pool for merging at later stage
+  // if (!record.id) {
+  //   ReturnError(
+  //     error,
+  //     `Cannot create ID for this student, either Chinese name or ${className1}/${className2}(TC...) is missing`,
+  //     errors.critical
+  //   )
+  // }
+}
+
+const checkHkId = (error, record) => {
+  if (record.hkId && !regex.hkId.test(record.hkId)) {
+    ReturnWarning(error, `Unexpected HKID format`, errors.minor)
   }
 }
 
@@ -641,14 +703,14 @@ const checkClassName = (error, className) => {
 const checkMasterDereg = (error, record) => {
   let __masterRemark = _master_remark.get(record)
 
-  if(!__masterRemark) return false
-  
+  if (!__masterRemark) return false
+
   let masterRemark = __masterRemark.split(";")
   masterRemark = masterRemark[masterRemark.length - 1].split(":")
   masterRemark = masterRemark[masterRemark.length - 1]
 
   if (masterRemark && regex.masterNo.test(masterRemark)) {
-    record.__deregByMaster = true
+    //record.__deregByMaster = true
     ReturnWarning(
       error,
       `Student deregistered by 總表 其他評語, please confirm`,
@@ -656,30 +718,30 @@ const checkMasterDereg = (error, record) => {
     )
     return true
   }
-  record.__deregByMaster = false
+  //record.__deregByMaster = false
   return false
 }
 
-export const checker = record => {
+export const checker = (record) => {
   const error = {
     __error: null,
     __errorLevel: null,
     __additional__error: null,
     __warning: null,
     __warningLevel: null,
-    __additional__warning: null
+    __additional__warning: null,
   }
 
   let tempClass = record.__programmeClass
   if (record.__programmeClass) {
-    let split = `${record.__programmeClass}`.split(';')
-    let parsedFile = split[split.length - 1].split(':')
+    let split = `${record.__programmeClass}`.split(";")
+    let parsedFile = split[split.length - 1].split(":")
     let parsed = parsedFile[parsedFile.length - 1].trim()
     record.__programmeClass = parsed
   }
 
   record.dereg =
-    record.campus?.id && record.__programmeClass
+    record.campus && record.__programmeClass
       ? _dereg.get(
           record.__programmeClass,
           error,
@@ -701,6 +763,8 @@ export const checker = record => {
   Object.assign(record, error)
 }
 
+let count__ = 0
+
 export const solver = (
   index,
   row,
@@ -714,11 +778,12 @@ export const solver = (
   let awardYear = (award ? _year : null) || _award_year.get(row)
   if (dve) {
     row[enrollment_eng] = row[enrollment] = _year.trim()
-    //console.log(_year)
   }
-  let entry = _base.entryDate.get(row) || { year: _year, month: 9 }
 
-  //let entry = _base.entryDate.get(row) || { year, month: 9 } //assume september if not provided
+  // if (count__ < 1) console.log(row)
+
+  let entry = _base.entryDate.get(row)
+
   let chi_Name = _base.cname.get(row)
   let eng_name = _base.ename.get(row)
   let hkId = _base.hkId.get(row)
@@ -727,37 +792,18 @@ export const solver = (
 
   let error = {}
 
-  let baseErrors = checkEachKey(row, baseChecker, false)
-  if (baseErrors.size > 0) {
-    ReturnError(
-      error,
-      'Missing required fields: ' + Array.from(baseErrors).join(', '),
-      errors.important
-    )
-  }
-
   let className = _base.className.get(row)
   checkClassName(error, className)
 
-  let id,
-    name = chi_Name,
-    fragileId
+  let id
 
-  if (name && className && className != weakClassname) {
-    id = className + '-' + name
+  if (chi_Name && className && className != weakClassname) {
+    id = className + "-" + chi_Name
   }
-  // else if (hkId) {
-  //   id = hkId
-  //   fragileId = true
-  //   ReturnError(
-  //     error,
-  //     'Unique identifier missing, it has no a combination of class name(TC...) and name',
-  //     //`Teen's class name(${className2}, eg: TC...)(${className1}/${className2}, eg: 22N03ACG1DD) or name(${cname}/${ename}) are missing, it is now using HKID as the unique identifier`,
-  //     errors.critical
-  //   )
-  // }
 
   const masterRemark = _master_remark.get(row)
+  const avgMark = _avg_mark.get(row)
+
   const programme = _programme.get(row)
   const diploma = _diploma.get(row)
   const campus = _campus.get(row)
@@ -766,16 +812,18 @@ export const solver = (
   let record = {
     id,
     ...entry,
+    __entry: entry,
     __file: {
-      [file]: [index]
+      [file]: [index],
     },
+    __avg_mark: avgMark,
     __remark: masterRemark,
     __operation: operation,
     __year: _year,
     __type: type,
     __programmeClass: programmeClass,
     programmeClass_name: programmeClass,
-    remark: row.remark,
+    remark: programme?.remark || row.remark, //...i cant remember why
     hkId,
     vdpId,
     guide,
@@ -784,14 +832,12 @@ export const solver = (
     className: className,
     diploma: diploma || programme?.diploma,
     campus: campus || programme?.campus,
-    awardYear
+    awardYear,
   }
 
-  if (programme?.remark) {
-    record.remark = programme.remark
-  }
+  // if (count__ < 1) console.log(record)
 
-  let [generic, trade] = [_generic, _trade].map(e => e.get(row))
+  let [generic, trade] = [_generic, _trade].map((e) => e.get(row))
 
   record.dereg =
     campus?.id && programmeClass
@@ -801,20 +847,36 @@ export const solver = (
 
   if (!record.dereg) {
     record.programmeClass_name = programmeClass
+
+    // I wish i got a list of all the programme codes
+    // if (record.diploma?.id && record.programmeClass_name) {
+    //   record.programmeClass_name = record.programmeClass_name
+    //     .split(" ")
+    //     .filter(
+    //       (c) =>
+    //         c &&
+    //         !(
+    //           c.includes(record.diploma.id) &&
+    //           c.length > record.diploma.id.length * 0.7
+    //         )
+    //     )
+    //     .join(" ")
+    // } else {
+    //   // console.log("no programme class")
+    // }
+
     record.trade = trade
     record.generic = generic
   } else {
     record.programmeClass_name = null
   }
 
-  checkEntry(error, record)
   checkId(error, record)
   checkProgrammeClass(error, record)
 
   Object.assign(record, error)
 
-  record.__bad_id = !!fragileId
-  record.__original = row
+  record.__original = [{ [file]: row }]
 
   if (record.__error || record.__warning)
     return [
@@ -823,8 +885,10 @@ export const solver = (
       errorsFlipped[record.__errorLevel],
       record.__warning,
       errorsFlipped[record.__warningLevel],
-      error
+      error,
     ]
+
+  count__++
 
   return [record]
 }
@@ -833,27 +897,41 @@ export const solver = (
 
 // #region Export
 
-export const header = [
-  enrollment,
-  ename,
-  cname,
-  wayout_cname,
-  hkId,
-  className1,
-  className2,
-  className,
-  vdpId,
-  dereg,
-  guide_name,
-  diploma_id,
-  diploma_name,
-  programme_campus,
-  wayout_programme,
-  programmeClass_name,
-  Object.keys(programmeClass_generic).map(key => programmeClass_generic[key]),
-  Object.keys(programmeClass_trade).map(key => programmeClass_trade[key]),
-  awardYear
-]
+export const header = Array.from(
+  new Set(
+    [
+      ...Object.values(_base),
+      ...Object.values(_className),
+      _vdpId,
+      _dereg,
+      _guide,
+      ...Object.values(_diploma),
+      _campus,
+      _programmeClass.name,
+      ...Object.values(_trade),
+      ...Object.values(_generic),
+      _award_year,
+    ]
+      .reduce((prev, curr) => {
+        if (Array.isArray(curr.name))
+          prev.push(
+            ...curr.name.filter((e) => {
+              return Boolean(e) && typeof e === "string"
+            })
+          )
+        else if (
+          curr.name &&
+          typeof curr.name === "string" &&
+          typeof curr !== "function"
+        ) {
+          prev.push(curr.name)
+        }
+        return prev
+      }, [])
+      .filter((h) => typeof h !== "function")
+  )
+)
+
 // #endregion
 
 ///=================================================================================================
@@ -862,10 +940,10 @@ export const header = [
 //
 ///=================================================================================================
 
-function createGetFn (accessorKey) {
-  const keys = accessorKey.split('.')
+function createGetFn(accessorKey) {
+  const keys = accessorKey.split(".")
 
-  return row => {
+  return (row) => {
     let value = row
     for (const key of keys) {
       if (value === undefined) {
@@ -884,132 +962,129 @@ const worksheetColumns = (headers, block = []) => {
     key: key,
     width: (header.width || xs) * excelWidthScale,
     _style: header.style || undefined,
-    get: header.set || header.get || createGetFn(key)
+    get: header.set || header.get || createGetFn(key),
   }))
   return res
 }
 
 const _system = {
   operation: {
-    name: '(Operation)',
-    set: record => record.__operation,
+    name: "(Operation)",
+    set: (record) => record.__operation,
     width: xs,
-    style: 'system'
+    style: "system",
   },
   type: {
-    name: '(Type)',
-    set: record => record.__type,
+    name: "(Type)",
+    set: (record) => record.__type,
     width: md,
-    style: 'system'
+    style: "system",
   },
   filename: {
-    name: '(File)',
-    set: record => {
+    name: "(File)",
+    set: (record) => {
       let files = Object.keys(record.__file).reduce((acc, key) => {
         var name = key
         var indexes = record.__file[key]
-        acc += `${name}[${indexes.join(', ')}]; `
+        acc += `${name}[${indexes.join(", ")}]; `
         return acc
-      }, '')
+      }, "")
       return files.slice(0, -2)
     },
     width: xl,
-    style: 'system'
-  }
-}
-
-const _remark = {
-  name: '(Wayout Remark)',
-  set: record => record.remark,
-  style: 'system'
+    style: "system",
+  },
 }
 
 const _master_remark = {
-  name: '(總表 其他評語)',
-  set: record => record.__remark,
-  get: record => record.__remark,
-  style: 'system'
-}
+  name: ["(總表 其他評語)", "其他評語"],
+  set: (record) => record.__remark,
+  get: (record) => {
+    if (record.__remark) return record.__remark
 
-const _award_year = {
-  name: awardYear,
-  get: record => record[awardYear],
-  set: record => record.awardYear,
-  style: 'system'
-}
-
-const _className = {
-  classname1: {
-    name: className1,
-    set: record => record.className?.slice(2, 7)
+    return removeSpace(getParsedValue(record, _master_remark))
   },
-  classname2: {
-    name: className2,
-    set: record => record.className?.slice(7)
-  }
+  style: "system",
+}
+
+const _avg_mark = {
+  name: ["(總分)", "總分(100%)"],
+  width: xs,
+  style: "system",
+  get: (record) => removeSpace(getParsedValue(record, _avg_mark)),
+  set: (record) => {
+    if (!record?.__avg_mark) return null
+
+    try {
+      const mark = parseFloat(record.__avg_mark).toFixed(2)
+      return mark
+    } catch (e) {
+      return null
+    }
+  },
 }
 
 const _original = {
   original: {
-    name: '(Original)',
-    set: record => record.__original,
-    width: md,
-    style: 'system'
-  }
+    name: "(Original)",
+    set: (record) => record.__original,
+    width: sm,
+    style: "system",
+  },
 }
 
 const _id = {
-  id: { name: '(ID)', set: record => record.id, style: 'system' }
+  id: { name: "(ID)", set: (record) => record.id, style: "system" },
 }
 
 const _oriProgrammeClass = {
   originalProgrammeClass: {
     name: `(總表 DVE Class)`,
-    set: record => record.__programmeClass || null,
-    style: 'system'
-  }
+    set: (record) => record.__programmeClass || null,
+    style: "system",
+  },
 }
 
 const _warning = {
   warning: {
-    name: '(Warning)',
-    set: record => record.__warning || null,
+    name: "(Warning)",
+    set: (record) => record.__warning || null,
     width: xl,
-    style: 'warning'
+    style: "warning",
   },
   warningLevel: {
-    name: '(Warning Level)',
-    set: record =>
+    name: "(Warning Level)",
+    set: (record) =>
       record.__warningLevel ? errorsFlipped[record.__warningLevel] : null,
-    style: 'warning'
+    style: "warning",
   },
   additionalWarning: {
-    name: '(Additional Warning)',
-    set: record => record.__additional__warning || null,
+    name: "(Additional Warning)",
+    set: (record) => record.__additional__warning || null,
     width: xl,
-    style: 'warning'
-  }
+    style: "warning",
+  },
 }
 
 const _error = {
   error: {
-    name: '(Error)',
-    set: record => record.__error || null,
+    name: "(Error)",
+    set: (record) => record.__error || null,
     width: xl,
-    style: 'error'
+    style: "error",
   },
   errorLevel: {
-    name: '(Error Level)',
-    set: record =>
+    name: "(Error Level)",
+    set: (record) =>
       record.__errorLevel ? errorsFlipped[record.__errorLevel] : null,
-    style: 'error'
+    style: "error",
   },
   additionalError: {
-    name: '(Additional Error)',
-    set: record => record.__additional__error || null,
+    name: "(Additional Error)",
+    set: (record) => record.__additional__error || null,
     width: xl,
-    style: 'error'
-  }
+    style: "error",
+  },
 }
 
 const baseExportSchema = {
@@ -1021,60 +1096,73 @@ const baseExportSchema = {
   guide: _guide,
   campus_id: _campus,
   diploma_id: _diploma.id,
-  diploma_name: _diploma.name
+  diploma_name: _diploma.name,
 }
 
 const namelessProgrammeClassSchema = {
   programmeClass_generic_name: _generic.name,
   programmeClass_generic_email: _generic.email,
   programmeClass_trade_name: _trade.name,
-  programmeClass_trade_email: _trade.email
+  programmeClass_trade_email: _trade.email,
 }
 const programmeClassSchema = {
   programmeClass_name: _programmeClass.name,
-  ...namelessProgrammeClassSchema
+  ...namelessProgrammeClassSchema,
 }
 
 const allExportSchema = {
-  ..._id,
-  vdpId: _vdpId,
-  ...baseExportSchema,
-  ...programmeClassSchema,
-  awardYear: _award_year,
-  remark: _remark,
+  enrollment: _base.entryDate,
+  remark: _wayout_remark,
+  cname: _base.cname,
+  ename: _base.ename,
+  ..._className,
+  campus_id: _campus,
+  diploma_id: _diploma.id,
+  diploma_name: _diploma.name,
+  programmeClass_name: _programmeClass.name,
+  ..._oriProgrammeClass,
   dereg: _dereg,
-  master_remark: _master_remark
+  master_remark: _master_remark,
+  avg_mark: _avg_mark,
+  programmeClass_generic_name: _generic.name,
+  programmeClass_generic_email: _generic.email,
+  programmeClass_trade_name: _trade.name,
+  programmeClass_trade_email: _trade.email,
+  guide: _guide,
+  hkId: _base.hkId,
+  vdpId: _vdpId,
+  awardYear: _award_year,
 }
 
 const debugSuccessSchema = {
-  ..._system,
   ...allExportSchema,
-  ..._oriProgrammeClass,
   ..._warning,
-  ..._original
+  ..._id,
+  ..._original,
+  ..._system,
 }
 
 const debugNoDupeSchema = {
-  ..._system,
   ...allExportSchema,
-  ..._oriProgrammeClass,
   ..._warning,
-  ..._original
+  ..._id,
+  ..._original,
+  ..._system,
 }
 delete debugNoDupeSchema.awardYear
 
 const debugAwardSchema = {
-  ...debugNoDupeSchema
+  ...debugNoDupeSchema,
 }
 delete debugAwardSchema.dereg
 
 const debugFailSchema = {
-  ..._system,
   // ..._fragileId,
   ...allExportSchema,
-  ..._oriProgrammeClass,
   ..._error,
-  ..._original
+  ..._id,
+  ..._original,
+  ..._system,
 }
 delete debugFailSchema.awardYear
 
@@ -1083,11 +1171,11 @@ export const exportSchema = {
     vdpId: _vdpId,
     ...baseExportSchema,
     awardYear: _award_year,
-    dereg: _dereg
+    dereg: _dereg,
   }),
   debugAwardSchema: worksheetColumns(debugAwardSchema),
   debugNoDupeSchema: worksheetColumns(debugNoDupeSchema),
   debugSuccessSchema: worksheetColumns(debugSuccessSchema),
   debugFailSchema: worksheetColumns(debugFailSchema),
-  contactsc: worksheetColumns({ ...baseExportSchema, ...programmeClassSchema })
+  contactsc: worksheetColumns({ ...baseExportSchema, ...programmeClassSchema }),
 }
