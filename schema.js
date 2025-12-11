@@ -8,6 +8,12 @@ import { grantham_start_month, grantham_start_year } from "./main.js"
 //
 ///=================================================================================================
 
+export const headerRemakeNames = {
+  diplomaName: "diploma name",
+  tsEntry: "teens entry",
+  dveEntry: "entry2",
+}
+
 const enrollment = "期數",
   enrollment_eng = "DVE Entry",
   ename = "英文姓名",
@@ -23,7 +29,6 @@ const enrollment = "期數",
   programme_campus = "上課地點",
   wayout_programme = "詳情",
   master_remark = "評語",
-  programmeClass_name = "Class",
   programmeClass_name2 = "(總表 DVE Class)",
   //header for class tutor info would already be parsed by remakeTutorHeaders in main.js
   programmeClass_generic = {
@@ -122,38 +127,6 @@ const xl = 20,
   sm = 7.5,
   xs = 5
 
-const _className = {
-  classname1: {
-    name: [className1, "teens entry"],
-    set: (record) => record.className?.slice(2, 7),
-    get: (record) =>
-      removeSpace(
-        getParsedValue(record, _className.classname1, [
-          regex.className1_1,
-          regex.className2_1,
-          regex.className3_1,
-        ])
-      ),
-  },
-  classname2: {
-    name: [className2, "course", "teens class"],
-    set: (record) => record.className?.slice(7),
-    get: (record) => {
-      const c2 = removeSpace(
-        getParsedValue(record, _className.classname2, [
-          regex.className1_2,
-          regex.className2_2,
-          regex.className3_2,
-        ])
-      )
-
-      if (c2 && regex.classNameRare.test(c2))
-        return c2.slice(0, 2) + "1" + c2.slice(2)
-      return c2
-    },
-  },
-}
-
 const getParsedValue = (obj, def, formats, checker) => {
   const names = def.name || def
 
@@ -187,9 +160,61 @@ const formatSpace = (str) =>
 
 const spaceChecker = (value) => Boolean(removeSpace(value))
 
+const standardHeader = {
+  dveEntry: enrollment_eng,
+  ename: "Eng Name",
+  cname: "Chi Name",
+  hkid: "ID",
+  tsEntry: "Programme",
+  tsClass: "Course",
+  sc: "SC",
+  campus: "Campus",
+  diplomaId: "DVE Programme Offered",
+  diplomaName: "Programme",
+  dveClass: "Class",
+  dveTTn: programmeClass_trade.name,
+  dveTTe: programmeClass_trade.email,
+  dveTGn: programmeClass_generic.name,
+  dveTGe: programmeClass_generic.email,
+  masterRemark: "其他評語",
+  avgMark: "總分(100%)",
+}
+
+const _className = {
+  classname1: {
+    name: [className1, headerRemakeNames.tsEntry],
+    set: (record) => record.className?.slice(2, 7),
+    get: (record) =>
+      removeSpace(
+        getParsedValue(record, _className.classname1, [
+          regex.className1_1,
+          regex.className2_1,
+          regex.className3_1,
+        ])
+      ),
+  },
+  classname2: {
+    name: [className2, standardHeader.tsClass, "teens class"],
+    set: (record) => record.className?.slice(7),
+    get: (record) => {
+      const c2 = removeSpace(
+        getParsedValue(record, _className.classname2, [
+          regex.className1_2,
+          regex.className2_2,
+          regex.className3_2,
+        ])
+      )
+
+      if (c2 && regex.classNameRare.test(c2))
+        return c2.slice(0, 2) + "1" + c2.slice(2)
+      return c2
+    },
+  },
+}
+
 const _base = {
   entryDate: {
-    name: [enrollment_eng, enrollment, ""],
+    name: [standardHeader.dveEntry, headerRemakeNames.dveEntry, enrollment, ""],
     get: (record) => {
       let entry = removeSpace(
         getParsedValue(record, _base.entryDate, regex.entry)
@@ -217,7 +242,7 @@ const _base = {
     },
   },
   ename: {
-    name: [ename, "English name", "Eng name", ""],
+    name: [ename, "English name", standardHeader.ename, ""],
     get: (record) =>
       formatSpace(
         getParsedValue(record, _base.ename)?.replace(regex.space, " ")
@@ -226,7 +251,7 @@ const _base = {
     width: md,
   },
   cname: {
-    name: [cname, wayout_cname, "Chinese name", "Chi name", ""],
+    name: [cname, wayout_cname, "Chinese name", standardHeader.cname, ""],
     get: (record) =>
       formatSpace(
         getParsedValue(record, _base.cname)?.replace(regex.space, " ")
@@ -234,7 +259,7 @@ const _base = {
     set: (record) => record.cname,
   },
   hkId: {
-    name: [hkId, "ID", ""],
+    name: [hkId, standardHeader.hkid, ""],
     get: (record) => {
       let id = removeSpace(
         getParsedValue(record, _base.hkId, [
@@ -277,9 +302,9 @@ const _base = {
   },
 }
 
-const _guide = {
-  name: [guide_name, "SC"],
-  get: (record) => formatSpace(getParsedValue(record, _guide)),
+const _sc = {
+  name: [guide_name, standardHeader.sc],
+  get: (record) => formatSpace(getParsedValue(record, _sc)),
   set: (record) => record.guide,
   width: sm,
 }
@@ -361,13 +386,13 @@ function parseCampus(campus) {
 
 const _diploma = {
   id: {
-    name: [diploma_id, "DVE Programme Offered"],
+    name: [diploma_id, standardHeader.diplomaId],
     get: (record) =>
       removeSpace(getParsedValue(record, _diploma.id)?.toUpperCase()),
     set: (record) => record.programme?.diploma?.id || record.diploma?.id,
   },
   name: {
-    name: [diploma_name, "Programme"],
+    name: [diploma_name, headerRemakeNames.diplomaName],
     width: lg,
     get: (record) =>
       removeSpace(
@@ -417,7 +442,7 @@ const _diploma = {
 }
 
 const _campus = {
-  name: [programme_campus, "Campus"],
+  name: [programme_campus, standardHeader.campus],
   get: (record) =>
     parseCampus(removeSpace(getParsedValue(record, _campus)?.toUpperCase())),
   set: (record) => record.programme?.campus || record.campus || null,
@@ -505,10 +530,7 @@ const [_trade, _generic] = [
 
 const _programmeClass = {
   name: {
-    name: [programmeClass_name, programmeClass_name2],
-    //this is so sad, the logic is scattered elsewhere,
-    //since i am not changing records directly in get functions
-    //and this uses the dereg status
+    name: [standardHeader.dveClass, programmeClass_name2],
     get: (record) => removeSpace(getParsedValue(record, _programmeClass.name)),
     set: (record) => record.programmeClass_name || null,
   },
@@ -604,8 +626,6 @@ const errorsFlipped = Object.keys(errors).reduce((acc, key) => {
 //==================================
 // Parser
 //==================================
-
-const baseChecker = Object.keys(_base).map((key) => _base[key].name)
 
 const checkProgrammeClass = (error, record) => {
   let hasTeacher = !!record.generic || !!record.trade
@@ -788,7 +808,7 @@ export const solver = (
   let eng_name = _base.ename.get(row)
   let hkId = _base.hkId.get(row)
   let vdpId = _vdpId.get(row)
-  let guide = _guide.get(row)
+  let guide = _sc.get(row)
 
   let error = {}
 
@@ -829,7 +849,9 @@ export const solver = (
     guide,
     cname: chi_Name,
     ename: eng_name,
-    className: className,
+    //prevent weakClassname from overwriting the actual classname
+    //of the dupe record within the same file
+    className: className == weakClassname ? null : className,
     diploma: diploma || programme?.diploma,
     campus: campus || programme?.campus,
     awardYear,
@@ -904,7 +926,7 @@ export const header = Array.from(
       ...Object.values(_className),
       _vdpId,
       _dereg,
-      _guide,
+      _sc,
       ...Object.values(_diploma),
       _campus,
       _programmeClass.name,
@@ -956,11 +978,11 @@ function createGetFn(accessorKey) {
 }
 
 const excelWidthScale = 2.2
-const worksheetColumns = (headers, block = []) => {
+const worksheetColumns = (headers, scale = excelWidthScale) => {
   let res = Object.entries(headers).map(([key, header]) => ({
     header: Array.isArray(header.name) ? header.name[0] : header.name,
     key: key,
-    width: (header.width || xs) * excelWidthScale,
+    width: (header.width || xs) * scale,
     _style: header.style || undefined,
     get: header.set || header.get || createGetFn(key),
   }))
@@ -997,7 +1019,7 @@ const _system = {
 }
 
 const _master_remark = {
-  name: ["(總表 其他評語)", "其他評語"],
+  name: ["(總表 其他評語)", standardHeader.masterRemark],
   set: (record) => record.__remark,
   get: (record) => {
     if (record.__remark) return record.__remark
@@ -1008,7 +1030,7 @@ const _master_remark = {
 }
 
 const _avg_mark = {
-  name: ["(總分)", "總分(100%)"],
+  name: ["(總分)", standardHeader.avgMark],
   width: xs,
   style: "system",
   get: (record) => removeSpace(getParsedValue(record, _avg_mark)),
@@ -1093,7 +1115,7 @@ const baseExportSchema = {
   cname: _base.cname,
   hkId: _base.hkId,
   ..._className,
-  guide: _guide,
+  guide: _sc,
   campus_id: _campus,
   diploma_id: _diploma.id,
   diploma_name: _diploma.name,
@@ -1128,7 +1150,7 @@ const allExportSchema = {
   programmeClass_generic_email: _generic.email,
   programmeClass_trade_name: _trade.name,
   programmeClass_trade_email: _trade.email,
-  guide: _guide,
+  guide: _sc,
   hkId: _base.hkId,
   vdpId: _vdpId,
   awardYear: _award_year,
@@ -1166,6 +1188,108 @@ const debugFailSchema = {
 }
 delete debugFailSchema.awardYear
 
+const addName = (schema, blank) => {
+  return Object.keys(schema).reduce((acc, curr) => {
+    acc[curr] = { ...schema[curr] }
+    acc[curr].name = [standardHeader[curr]]
+
+    if (blank) {
+      delete acc[curr].get
+      acc[curr].set = () => ""
+      delete acc[curr].style
+    }
+
+    return acc
+  }, {})
+}
+
+//to counter width multiplier
+//this is so sad
+const normalizeWidth = (schema, scale) => {
+  return Object.keys(schema).reduce((acc, curr) => {
+    acc[curr] = { ...schema[curr], width: schema[curr].width / scale }
+    return acc
+  }, {})
+}
+
+const scMasterSchema = {
+  ...addName({
+    dveEntry: _base.entryDate,
+    ename: _base.ename,
+    cname: _base.cname,
+    hkid: _base.hkId,
+    tsClass: _className.classname1,
+    tsEntry: _className.classname2,
+    sc: _sc,
+    campus: _campus,
+    diplomaId: _diploma.id,
+    diplomaName: _diploma.name,
+    dveClass: _programmeClass.name,
+    dveTTn: _programmeClass.trade.name,
+    dveTTe: _programmeClass.trade.email,
+    dveTGn: _programmeClass.generic.name,
+    dveTGe: _programmeClass.generic.email,
+  }),
+
+  ...normalizeWidth(
+    {
+      attendance: {
+        name: ["出席率 (佔50%)"],
+        width: sm,
+      },
+      politeness: {
+        name: ["整體禮貌"],
+        width: sm,
+      },
+      attitudes: {
+        name: ["學習態度(面授及網教)"],
+        width: sm,
+      },
+      responsiblity: {
+        name: ["責任感"],
+        width: sm,
+      },
+      friendliness: {
+        name: ["待人接物"],
+        width: sm,
+      },
+      attentiveness: {
+        name: ["服務他人"],
+        width: sm,
+      },
+      accScore: {
+        name: ["學業成績"],
+        width: sm,
+      },
+      avgSix: {
+        name: ["6項之平均分"],
+        width: sm,
+      },
+      avg: {
+        name: ["平均分(佔50%)"],
+        width: sm,
+      },
+    },
+    1.8
+  ),
+
+  ...addName(
+    {
+      avgMark: { ..._avg_mark, width: sm },
+      masterRemark: { ..._master_remark, width: xl },
+    },
+    true
+  ),
+
+  remark: {
+    name: ["備註"],
+    width: xl,
+    set: () => "",
+  },
+}
+
+// console.log(scMasterSchema)
+
 export const exportSchema = {
   all: worksheetColumns({
     vdpId: _vdpId,
@@ -1173,6 +1297,7 @@ export const exportSchema = {
     awardYear: _award_year,
     dereg: _dereg,
   }),
+  scMasterSchema: worksheetColumns(scMasterSchema),
   debugAwardSchema: worksheetColumns(debugAwardSchema),
   debugNoDupeSchema: worksheetColumns(debugNoDupeSchema),
   debugSuccessSchema: worksheetColumns(debugSuccessSchema),

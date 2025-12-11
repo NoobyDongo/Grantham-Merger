@@ -1,8 +1,16 @@
+import * as readline from "readline"
 import * as xlsx from "xlsx"
 import fs from "fs"
 import path from "path"
 import { fileURLToPath } from "url"
-import { checker, exportSchema, header, remarkRegex, solver } from "./schema.js"
+import {
+  checker,
+  exportSchema,
+  header,
+  headerRemakeNames,
+  remarkRegex,
+  solver,
+} from "./schema.js"
 import { useExcelGenerator } from "./assembler.js"
 
 ///=================================================================================================
@@ -45,12 +53,17 @@ if (!fs.existsSync(outputDir)) {
 }
 
 const backupDirName = "__backup"
-const awardDirName = "_award"
 const campusDirName = "_campus"
 
 const dveDateRowName = "面試批次"
 
 // const badDirName = '_missing data'
+
+const ycInputDirConfig = {
+  yc: {
+    name: "from YC",
+  },
+}
 
 const inputDirConfig = {
   award: {
@@ -64,6 +77,17 @@ const inputDirConfig = {
   },
   dve: {
     name: "dve interview",
+    /**
+     * only for folder generation
+     */
+    content: {
+      yc: {
+        name: "YC",
+      },
+      cci: {
+        name: "HTICCI",
+      },
+    },
   },
 }
 const reverseInputDirConfig = Object.keys(inputDirConfig).reduce((acc, key) => {
@@ -72,11 +96,25 @@ const reverseInputDirConfig = Object.keys(inputDirConfig).reduce((acc, key) => {
   return acc
 }, {})
 
-const inputDir = Object.keys(inputDirConfig).reduce((acc, key) => {
-  const config = inputDirConfig[key]
-  acc[key] = path.join(excelDir, config.name)
-  return acc
-}, {})
+const generatePath = (configs, res = {}, basepath = excelDir) =>
+  Object.keys(configs).reduce((acc, key) => {
+    const config = configs[key]
+
+    acc[key] = path.join(basepath, config.name)
+
+    if (config.content) return generatePath(config.content, res, acc[key])
+
+    return acc
+  }, res)
+
+const ycInputDir = generatePath(ycInputDirConfig)
+const inputDir = generatePath(inputDirConfig)
+
+// Object.keys(inputDirConfig).reduce((acc, key) => {
+//   const config = inputDirConfig[key]
+//   acc[key] = path.join(excelDir, config.name)
+//   return acc
+// }, {})
 
 //========//grantham config
 
@@ -189,14 +227,22 @@ function extractYear(fileName) {
 }
 
 //this is so funny
-const remakeTutorHeaders = (headers) => {
+const remakeHeaders = (headers) => {
   let email
+  let hasDveEntry
   let teensClassRowId, confirmedTeensHeader
-  const newHeaders = headers.map((header, i) => {
+  const newHeaders = headers.map((rawheader, i) => {
+    const header = rawheader.trim()
+
+    if (/dve entry/i.test(header)) {
+      if (hasDveEntry) return headerRemakeNames.dveEntry
+      hasDveEntry = true
+    }
     if (/course/i.test(header) && teensClassRowId != undefined) {
       confirmedTeensHeader = true
-    } else if (/programme/i.test(header) && teensClassRowId == undefined) {
-      teensClassRowId = i
+    } else if (/^programme$/i.test(header)) {
+      if (teensClassRowId == undefined) teensClassRowId = i
+      else return headerRemakeNames.diplomaName
     }
 
     if (email) {
@@ -217,14 +263,13 @@ const remakeTutorHeaders = (headers) => {
   })
 
   if (teensClassRowId != undefined && confirmedTeensHeader) {
-    newHeaders[teensClassRowId] = "teens entry"
+    newHeaders[teensClassRowId] = headerRemakeNames.tsEntry
   }
 
   return newHeaders
 }
 
-const findDveYear = (worksheet) => {
-  const rows = xlsx.utils.sheet_to_json(worksheet, { header: 1, raw: true })
+const findDveYear = (rows) => {
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i]
     if (row.some((cell) => `${cell}`.includes(dveDateRowName))) {
@@ -248,8 +293,7 @@ const findDveYear = (worksheet) => {
   return null
 }
 
-const findHeader = (worksheet) => {
-  const rows = xlsx.utils.sheet_to_json(worksheet, { header: 1, raw: true })
+const findHeader = (rows) => {
   const headers = _base_headers.reduce((acc, curr) => {
     if (!curr) return acc
     acc[
@@ -267,7 +311,7 @@ const findHeader = (worksheet) => {
   const matchedHeaders = {}
 
   for (let i = 0; i < rows.length; i++) {
-    const row = remakeTutorHeaders(rows[i])
+    const row = remakeHeaders(rows[i])
     const columns = new Set()
 
     const matchingHeaders = row.filter((header) => {
@@ -320,9 +364,15 @@ const readExcel = async (file, type, name, parentCollectionManager, id) => {
 
     const useAward = type === reverseInputDirConfig.award
     const useDVE = type === reverseInputDirConfig.dve
-    const year = useDVE ? findDveYear(worksheet) : extractYear(name)
 
-    const headerRow = findHeader(worksheet)
+    const rawRows = xlsx.utils.sheet_to_json(worksheet, {
+      header: 1,
+      raw: true,
+    })
+
+    const year = useDVE ? findDveYear(rawRows) : extractYear(name)
+
+    const headerRow = findHeader(rawRows)
 
     if (!headerRow) {
       return
@@ -418,7 +468,7 @@ function _readAllFiles(dir, filePaths = [], fileNames = []) {
   return [filePaths, fileNames]
 }
 
-async function readAllFiles(id, collectionManager) {
+async function readAllFiles(id, collectionManager, inputDir) {
   for (const key of Object.keys(inputDir)) {
     const loc = inputDir[key]
     const name = path.basename(loc)
@@ -476,9 +526,9 @@ function mergeRecord(success, collection) {
   }
 }
 
+const debugYcSuccessGenerator = useExcelGenerator(exportSchema.scMasterSchema)
 const debugSuccessGenerator = useExcelGenerator(exportSchema.debugSuccessSchema)
 const debugNoDupeSchema = useExcelGenerator(exportSchema.debugNoDupeSchema)
-const debugAwardSchema = useExcelGenerator(exportSchema.debugAwardSchema)
 const debugFailGenerator = useExcelGenerator(exportSchema.debugFailSchema)
 const campusGenerator = useExcelGenerator(exportSchema.contactsc, "body")
 
@@ -522,13 +572,13 @@ function concatWorkbook(workbook, workbook2) {
   })
 }
 
-const test = async () => {
+const generateMaster = async (fromYc) => {
   const id = generateReadableId()
   const collectionManager = new CollectionManager()
 
   console.log("Reading files from input folders... \n")
 
-  await readAllFiles(id, collectionManager)
+  await readAllFiles(id, collectionManager, fromYc ? ycInputDir : inputDir)
 
   let workbookSuccess = null,
     workbookFailed = null,
@@ -538,8 +588,9 @@ const test = async () => {
   let noDupeCollection = collectionManager.noDupeCollection
 
   if (collectionManager.successCollection.size > 0) {
-    workbookSuccess = debugSuccessGenerator({
-      ["所有記錄"]: collectionManager.successCollection,
+    const generator = fromYc ? debugYcSuccessGenerator : debugSuccessGenerator
+    workbookSuccess = generator({
+      [fromYc ? "總表" : "所有記錄"]: collectionManager.successCollection,
     })
     mergeRecord(collectionManager.successCollection, noDupeCollection)
     noDupeCollection.forEach(
@@ -584,7 +635,7 @@ const test = async () => {
   let noCampusCollection = new Map()
   let noTimeCollection = new Map()
 
-  if (noDupeCollection.size > 0) {
+  if (noDupeCollection.size > 0 && !fromYc) {
     for (const [id, record] of noDupeCollection) {
       checker(record)
       if (record.awardYear) {
@@ -594,11 +645,6 @@ const test = async () => {
         //if (record.__deregByMaster) masterDeregCollection.set(id, record)
       }
     }
-
-    if (awardCollection.size > 0)
-      workbookAward = debugAwardSchema({
-        main: awardCollection,
-      })
 
     for (const [id, record] of nomineeCollection) {
       const currentCampus = record.campus
@@ -625,8 +671,12 @@ const test = async () => {
       }
     }
 
+    const granthamYear = parseInt(grantham_start_year) + 4
+    const AY =
+      `${granthamYear - 1}`.substring(2) + `${granthamYear}`.substring(2)
+
     workbookUnique = debugNoDupeSchema({
-      ["所有未獲獎學生(系統將會處理更改)"]: nomineeCollection,
+      ["所有未獲獎學生"]: nomineeCollection,
       //['新添加的 (總表 其他評語) dereg']: masterDeregCollection,
       ["不在YC Excel中"]: campusFailedCollection,
       ["Dereg"]: deregCollection,
@@ -634,11 +684,12 @@ const test = async () => {
       [`超出Grantham選擇範圍(${grantham_start_year}/${grantham_start_month})`]:
         noTimeCollection,
       ["在YC Excel中"]: campusSuccessCollection,
+      [`獲獎學生(AY${AY})`]: awardCollection,
     })
   }
 
   if (workbookSuccess) {
-    concatWorkbook(workbookUnique, workbookSuccess)
+    if (workbookUnique) concatWorkbook(workbookUnique, workbookSuccess)
 
     collectionManager.logSummary()
 
@@ -646,21 +697,21 @@ const test = async () => {
 
     const promises = [
       writeOutput(
-        workbookUnique,
+        workbookUnique ?? workbookSuccess,
         "students",
         undefined,
         id,
         true
         // noDupeCollection.size
       ),
-      writeOutput(
-        workbookAward,
-        "award",
-        awardDirName,
-        id,
-        true
-        // awardCollection.size
-      ),
+      // writeOutput(
+      //   workbookAward,
+      //   "award",
+      //   awardDirName,
+      //   id,
+      //   true
+      //   // awardCollection.size
+      // ),
       writeOutput(
         workbookFailed,
         "_failed",
@@ -1015,20 +1066,51 @@ class CollectionManager {
   }
 }
 
-const waitForUserInput = () => {
+const waitForUserExit = () => {
   console.log("Press any key to exit...")
   process.stdin.setRawMode(true)
   process.stdin.resume()
   process.stdin.on("data", process.exit.bind(process, 0))
 }
 
+const askForOption = () => {
+  console.log("1) 為 YC 製作 Excel")
+  console.log("2) 結合來自 YC 的 Excel")
+  console.log("3) 為 DVE 教師製作 Excel")
+  console.log()
+
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  })
+
+  return new Promise((resolve, reject) =>
+    rl.question(`請選擇 1-3, 或輸入 0 退出: `, async (option) => {
+      rl.close()
+      console.log()
+
+      if (option == "0") {
+      } else if (option == "1") {
+        await generateMaster()
+      } else if (option == "2") {
+        await generateMaster(true)
+      } else {
+        await askForOption()
+      }
+
+      resolve()
+    })
+  )
+}
+
 const main = async () => {
   try {
-    await test()
+    await askForOption()
+    // await generateMaster()
   } catch (error) {
     console.error("An error occurred:", error)
   } finally {
-    if (isPkg) waitForUserInput()
+    if (isPkg) waitForUserExit()
   }
 }
 
