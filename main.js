@@ -234,10 +234,10 @@ const remakeHeaders = (headers) => {
   const newHeaders = headers.map((rawheader, i) => {
     const header = rawheader.trim()
 
-    if (/dve entry/i.test(header)) {
-      if (hasDveEntry) return headerRemakeNames.dveEntry
-      hasDveEntry = true
-    }
+    // if (/dve entry/i.test(header)) {
+    //   if (hasDveEntry) return headerRemakeNames.dveEntry
+    //   hasDveEntry = true
+    // }
     if (/course/i.test(header) && teensClassRowId != undefined) {
       confirmedTeensHeader = true
     } else if (/^programme$/i.test(header)) {
