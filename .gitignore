@@ -39,7 +39,7 @@ yarn-error.log*
 /secrets
 
 #io
-/_*
+/_*!_build.js
 
 # vercel
 .vercel
