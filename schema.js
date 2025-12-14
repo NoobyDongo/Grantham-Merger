@@ -9,9 +9,9 @@ import { grantham_start_month, grantham_start_year } from "./main.js"
 ///=================================================================================================
 
 export const headerRemakeNames = {
-  diplomaName: "diploma name",
-  tsEntry: "teens entry",
-  dveEntry: "entry2",
+  diplomaName: "Diploma Name",
+  tsEntry: "Teens Entry",
+  dveEntry: "Dve Entry 2",
 }
 
 const enrollment = "期數",
@@ -109,7 +109,7 @@ const regex = {
   hkIdStrict: new RegExp("^[A-Z]{1,2}\\d{6}\\([0-9A]\\)$", "i"),
   hkId: new RegExp("^[A-Z]{1,2}\\d{6}\\(?[0-9A]\\)?$", "i"),
 
-  empty: new RegExp("n[/\\\\]?a", "i"),
+  empty: new RegExp("^n[/\\\\]?a$", "i"),
   space: new RegExp(
     "[\t\n\v\f\r \u00a0\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u200b\u2028\u2029\u3000]+"
   ),
@@ -409,31 +409,11 @@ const _diploma = {
     const id = _diploma.id.get(record)
     const name = _diploma.name.get(record)
 
-    let shortenIndexFlag = { flag: false }
-
     if (id) {
-      diploma = getFromStore(_diplomaIdStore, id, shortenIndexFlag)
-      if (!diploma) {
-        diploma = name
-          ? getFromStore(_diplomaNameStore, name, shortenIndexFlag)
-          : null
-        if (!diploma) {
-          diploma = { id, name }
-        } else {
-          if (!diploma.id) diploma.id = id
-          if (!diploma.name && name) diploma.name = name
-        }
+      diploma = _diplomaIdStore.get(id)
+      if (!diploma && id && name) {
+        diploma = { id, name }
         _diplomaIdStore.set(id, diploma)
-        if (name) _diplomaNameStore.set(name, diploma)
-      } else {
-        if (!diploma.name && name) diploma.name = name
-        if (name) _diplomaNameStore.set(name, diploma)
-      }
-    } else if (name) {
-      diploma = getFromStore(_diplomaNameStore, name)
-      if (!diploma) {
-        diploma = { id: null, name }
-        _diplomaNameStore.set(name, diploma)
       }
     }
 
@@ -485,11 +465,14 @@ const _programme = {
     }
 
     campus = parseCampus(campus)
-    return campus && diploma?.id
-      ? { diploma, campus, remark }
-      : remark
-      ? { remark }
-      : null
+    const res =
+      campus && diploma?.id
+        ? { diploma, campus, remark }
+        : remark
+        ? { remark }
+        : null
+
+    return res
   },
 }
 
@@ -502,10 +485,12 @@ const [_trade, _generic] = [
     if (checkKeys(record, [value.name, value.email])) {
       const name = record[value.name]
       const email = (record[value.email] + "")
+        .replace(regex.space, "")
         .split("@")[0]
         ?.trim()
         ?.toLowerCase()
-      if (email && !(regex.empty.test(email) || regex.space.test(email))) {
+
+      if (email && !regex.empty.test(email)) {
         return {
           name: `${name}`.replace(regex.space, "_").replace(/_+/g, " ").trim(),
           email: email,
@@ -531,7 +516,10 @@ const [_trade, _generic] = [
 const _programmeClass = {
   name: {
     name: [standardHeader.dveClass, programmeClass_name2],
-    get: (record) => removeSpace(getParsedValue(record, _programmeClass.name)),
+    get: (record) =>
+      getParsedValue(record, _programmeClass.name)
+        ?.replace(regex.space, " ")
+        .trim(),
     set: (record) => record.programmeClass_name || null,
   },
   generic: _generic,
@@ -862,13 +850,25 @@ export const solver = (
   let [generic, trade] = [_generic, _trade].map((e) => e.get(row))
 
   record.dereg =
-    campus?.id && programmeClass
+    campus && programmeClass
       ? _dereg.get(programmeClass, error, generic, trade) ||
         checkMasterDereg(error, record)
       : false
 
   if (!record.dereg) {
     record.programmeClass_name = programmeClass
+    if (record.programmeClass_name && diploma?.id) {
+      const code = diploma.id
+      const className = record.programmeClass_name
+      const reg = new RegExp(`^${code}`, "i")
+
+      if (reg.test(className) && !regex.class_complex.test(className)) {
+        record.programmeClass_name = className
+          .replace(reg, "")
+          .replace(/^[^A-Za-z0-9]+|[^A-Za-z0-9]+$/g, "")
+          .trim()
+      }
+    }
 
     // I wish i got a list of all the programme codes
     // if (record.diploma?.id && record.programmeClass_name) {
@@ -999,7 +999,7 @@ const _system = {
   type: {
     name: "(Type)",
     set: (record) => record.__type,
-    width: md,
+    width: xs,
     style: "system",
   },
   filename: {
@@ -1013,7 +1013,7 @@ const _system = {
       }, "")
       return files.slice(0, -2)
     },
-    width: xl,
+    width: xs,
     style: "system",
   },
 }
@@ -1050,7 +1050,7 @@ const _original = {
   original: {
     name: "(Original)",
     set: (record) => record.__original,
-    width: sm,
+    width: xs,
     style: "system",
   },
 }
@@ -1134,13 +1134,15 @@ const programmeClassSchema = {
 
 const allExportSchema = {
   enrollment: _base.entryDate,
-  remark: _wayout_remark,
-  cname: _base.cname,
   ename: _base.ename,
+  cname: _base.cname,
+  hkId: _base.hkId,
   ..._className,
+  guide: _sc,
   campus_id: _campus,
   diploma_id: _diploma.id,
   diploma_name: _diploma.name,
+  remark: _wayout_remark,
   programmeClass_name: _programmeClass.name,
   ..._oriProgrammeClass,
   dereg: _dereg,
@@ -1150,10 +1152,8 @@ const allExportSchema = {
   programmeClass_generic_email: _generic.email,
   programmeClass_trade_name: _trade.name,
   programmeClass_trade_email: _trade.email,
-  guide: _sc,
-  hkId: _base.hkId,
-  vdpId: _vdpId,
   awardYear: _award_year,
+  vdpId: _vdpId,
 }
 
 const debugSuccessSchema = {
@@ -1212,6 +1212,85 @@ const normalizeWidth = (schema, scale) => {
   }, {})
 }
 
+const markingSchema = {
+  politeness: {
+    name: ["整體禮貌"],
+    width: sm,
+  },
+  attitudes: {
+    name: ["學習態度(面授及網教)"],
+    width: sm,
+  },
+  responsiblity: {
+    name: ["責任感"],
+    width: sm,
+  },
+  friendliness: {
+    name: ["待人接物"],
+    width: sm,
+  },
+  attentiveness: {
+    name: ["服務他人"],
+    width: sm,
+  },
+  accScore: {
+    name: ["學業成績"],
+    width: sm,
+  },
+}
+
+export const dveTeacherMarkingSchema = [
+  {
+    name: "spacer",
+    width: 2.5,
+  },
+  {
+    name: "學員姓名",
+    width: 15.67,
+  },
+  {
+    name: "課程編號",
+    width: 24.22,
+  },
+  {
+    name: "現時就讀班別",
+    width: 24.22,
+  },
+  {
+    name: "分校",
+    width: 24.22,
+  },
+  {
+    name: "填寫老師姓名",
+    width: 23.11,
+  },
+  {
+    name: "填寫老師聯絡電話",
+    width: 23.11,
+  },
+  {
+    name: "填寫老師電郵",
+    width: 32.11,
+  },
+  {
+    name: "(1) 推薦 →  請填寫「學生表現核表」學生整體出席率及項目1-6\n或\n(2) 不推薦 →  不需要填寫「學生表現核表」, 但請註明不推薦原因",
+    width: 68.56,
+  },
+  {
+    name: "學生整體出席率 % \n(請填實際數值)",
+    width: 21.11,
+    blue: true,
+  },
+  ...Object.values(markingSchema).map((s) => ({
+    name:
+      s.name[0]
+        //lol
+        .replace("(", "\n(") + "\n (1-10分)",
+    width: 14,
+    blue: true,
+  })),
+]
+
 const scMasterSchema = {
   ...addName({
     dveEntry: _base.entryDate,
@@ -1237,30 +1316,7 @@ const scMasterSchema = {
         name: ["出席率 (佔50%)"],
         width: sm,
       },
-      politeness: {
-        name: ["整體禮貌"],
-        width: sm,
-      },
-      attitudes: {
-        name: ["學習態度(面授及網教)"],
-        width: sm,
-      },
-      responsiblity: {
-        name: ["責任感"],
-        width: sm,
-      },
-      friendliness: {
-        name: ["待人接物"],
-        width: sm,
-      },
-      attentiveness: {
-        name: ["服務他人"],
-        width: sm,
-      },
-      accScore: {
-        name: ["學業成績"],
-        width: sm,
-      },
+      ...markingSchema,
       avgSix: {
         name: ["6項之平均分"],
         width: sm,

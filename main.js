@@ -11,7 +11,8 @@ import {
   remarkRegex,
   solver,
 } from "./schema.js"
-import { useExcelGenerator } from "./assembler.js"
+import { generateTeacherWorkbook, useExcelGenerator } from "./assembler.js"
+import { protectExcelFile } from "./xlsx-worker.js"
 
 ///=================================================================================================
 //
@@ -23,6 +24,9 @@ export const customColor = (colorCode) => (text) => {
   return `\x1b[38;5;${colorCode}m${text}\x1b[0m`
 }
 
+const yellow = customColor(3)
+const magenta = customColor(13)
+const blue = customColor(26)
 const green = customColor(2)
 const red = customColor(1)
 const orange = customColor(208)
@@ -47,9 +51,9 @@ if (!fs.existsSync(excelDir)) {
   fs.mkdirSync(excelDir)
 }
 
-const outputDir = path.join(baseDir, "_output")
-if (!fs.existsSync(outputDir)) {
-  fs.mkdirSync(outputDir)
+const outputsDir = path.join(baseDir, "_output")
+if (!fs.existsSync(outputsDir)) {
+  fs.mkdirSync(outputsDir)
 }
 
 const backupDirName = "__backup"
@@ -58,12 +62,6 @@ const campusDirName = "_campus"
 const dveDateRowName = "面試批次"
 
 // const badDirName = '_missing data'
-
-const ycInputDirConfig = {
-  yc: {
-    name: "from YC",
-  },
-}
 
 const inputDirConfig = {
   award: {
@@ -107,7 +105,16 @@ const generatePath = (configs, res = {}, basepath = excelDir) =>
     return acc
   }, res)
 
-const ycInputDir = generatePath(ycInputDirConfig)
+const dveInputDir = generatePath({
+  dve: {
+    name: "for dve teachers",
+  },
+})
+const ycInputDir = generatePath({
+  yc: {
+    name: "from YC",
+  },
+})
 const inputDir = generatePath(inputDirConfig)
 
 // Object.keys(inputDirConfig).reduce((acc, key) => {
@@ -120,44 +127,199 @@ const inputDir = generatePath(inputDirConfig)
 
 const __config_file_name = "config.json"
 
-const __grantham_start_year = "Grantham Start Date"
-const __grantham_start_month = "Grantham Start Month"
-const __config_copyToBackup = "Copy Input to Output"
-const __config_removeInput = "Remove Input On Each Run"
-const __config_individualSummery = "Make Console Summery For Each Excel"
+const numberParser = (value) => (value ? parseInt(value) : 0)
 
-var _configFile, _config
+const generateDate = (date = new Date()) => {
+  const chiNumbers = ["日", "一", "二", "三", "四", "五", "六"]
+
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, "0")
+  const day = String(date.getDate()).padStart(2, "0")
+  const weekday = chiNumbers[date.getDay()]
+
+  return `${year}年${month}月${day}日（星期${weekday}）`
+}
+
+const configs = {
+  startYear: {
+    key: "Grantham Selection Range(Year)",
+    default: new Date().getFullYear(),
+    parser: numberParser,
+  },
+  startMonth: {
+    key: "Grantham Selection Range(Month)",
+    default: 6,
+    parser: numberParser,
+  },
+  copyToBackup: {
+    key: "Copy Input to Output",
+    default: true,
+  },
+  removeInput: {
+    key: "Remove Input On Each Run",
+    default: false,
+  },
+  individualSummery: {
+    key: "Make Console Summery For Each Excel",
+    default: false,
+  },
+  teacherExcel: {
+    key: "Params for generating Excels for Dve Teachers",
+    content: {
+      address: {
+        key: "VDPO Address",
+        default: "",
+      },
+      phone: {
+        key: "VDPO Contact(phone)",
+        default: "0000 0000",
+      },
+      fax: {
+        key: "VDPO Contact(fax)",
+        default: "0000 0000",
+      },
+      deadline: {
+        key: "Deadline",
+        default: generateDate(),
+      },
+      config: {
+        key: "Config",
+        content: {
+          password: {
+            key: "Excel Password",
+            default: "12345678",
+          },
+          coveredByCampus: {
+            key: "Store generated Excel by Campus",
+            default: false,
+          },
+        },
+      },
+    },
+  },
+}
+
+const reverseKeyedConfigs = ((_obj) => {
+  const reverseKey = (obj) =>
+    Object.keys(obj).reduce((acc, key) => {
+      //so that content of the not reversed object doent get changed
+      acc[obj[key].key] = { ...obj[key], key: key }
+
+      if (acc[obj[key].key].content)
+        acc[obj[key].key].content = reverseKey(acc[obj[key].key].content)
+
+      return acc
+    }, {})
+  return reverseKey(_obj)
+})(configs)
+
+var _configFile,
+  //for vs code suggestions lol
+  _config = configs,
+  usedDefault = false
+
+const parseOptions = (configs, json) =>
+  Object.keys(configs).reduce((acc, key) => {
+    const option = configs[key]
+
+    if (option.content) {
+      acc[option.key] = parseOptions(
+        option.content,
+        typeof json[key] === "object" ? json[key] : {}
+      )
+    } else {
+      if (json[key] == undefined) {
+        acc[option.key] = option.default
+        usedDefault = true
+      } else
+        acc[option.key] = option.parser ? option.parser(json[key]) : json[key]
+    }
+
+    return acc
+  }, {})
+
+const generateDefaultConfig = (configs) =>
+  Object.keys(configs).reduce((acc, curr) => {
+    const option = configs[curr]
+    if (option.content) acc[curr] = generateDefaultConfig(option.content)
+    else acc[curr] = option.default
+    return acc
+  }, {})
+
+const logConfigs = (config, _config, key) => {
+  const withContent = {}
+  const flat = Object.keys(_config)
+    .filter((k) => {
+      if (!config[k]) return false
+      if (typeof _config[k] === "object") {
+        const oriKey = config[k].key
+        // console.log("orikey", oriKey)
+        withContent[key ? `${key}/${oriKey}` : `${oriKey}`] = {
+          config: config[k].content ? config[k].content : config[k],
+          _config: _config[k],
+        }
+        return false
+      }
+      return true
+    })
+    .reduce((acc, key) => {
+      const oriKey = config[key].key
+      acc[oriKey] = _config[key]
+      return acc
+    }, {})
+
+  if (key) console.log(`[${green(key)}]:`)
+  if (Object.keys(flat).length > 0) {
+    console.table(flat)
+    console.log()
+  }
+  for (const key in withContent) {
+    const pair = withContent[key]
+    logConfigs(pair.config, pair._config, key)
+  }
+}
 
 try {
   var _configFile = fs.readFileSync(path.join(baseDir, __config_file_name))
-  _config = JSON.parse(_configFile)
+  const json = JSON.parse(_configFile)
 
-  console.log("Config Found, loaded with these values:")
-  console.table(_config)
-  console.log()
+  _config = parseOptions(reverseKeyedConfigs, json)
+
+  console.log(`${green("Config Found")}, loaded with these values:`)
 } catch (e) {
-  console.log("Config Not Found, creating a new one with default values\n")
+  console.log(
+    `${orange("Config Not Found")}, creating a new one with default values\n`
+  )
 
-  _config = {
-    [__grantham_start_year]: 2021,
-    [__grantham_start_month]: 6,
-    [__config_copyToBackup]: true,
-    [__config_removeInput]: false,
-    [__config_individualSummery]: false,
-  }
+  _config = generateDefaultConfig(configs)
+  usedDefault = true
+}
 
+const syncKeyName = (config, _config) =>
+  Object.keys(_config).reduce((acc, key) => {
+    if (!config[key]) return acc
+
+    const oriKey = config[key].key
+
+    acc[oriKey] =
+      typeof _config[key] === "object" && config[key].content
+        ? syncKeyName(config[key].content, _config[key])
+        : _config[key]
+
+    return acc
+  }, {})
+
+if (usedDefault) {
   fs.writeFileSync(
     path.join(baseDir, __config_file_name),
-    JSON.stringify(_config, null, "\t")
+    JSON.stringify(syncKeyName(configs, _config), null, "\t")
   )
 }
 
-export const grantham_start_year = _config[__grantham_start_year]
-export const grantham_start_month = _config[__grantham_start_month]
+logConfigs(configs, _config)
 
-const copyToBackup = _config[__config_copyToBackup]
-const removeInput = _config[__config_removeInput]
-const individualSummery = _config[__config_individualSummery]
+export const grantham_start_year = parseInt(_config.startYear)
+export const grantham_start_month = parseInt(_config.startMonth)
 
 //========//solvers
 let _base_headers = header
@@ -354,12 +516,15 @@ const findHeader = (rows) => {
 ///=================================================================================================
 
 const readExcel = async (file, type, name, parentCollectionManager, id) => {
-  console.log(`Reading file: ${name}, year: ${extractYear(name)}`)
+  console.log(`Reading file: ${name}, year: ${yellow(extractYear(name))}`)
   const fileBuffer = fs.readFileSync(file)
   const workbook = xlsx.read(fileBuffer)
 
   if (workbook.SheetNames.length > 0) {
-    console.log(`Worksheets:`, workbook.SheetNames)
+    console.log(
+      `Worksheets:`,
+      `[${workbook.SheetNames.map((name) => green(name)).join(", ")}]`
+    )
     const worksheet = workbook.Sheets[workbook.SheetNames[0]]
 
     const useAward = type === reverseInputDirConfig.award
@@ -430,7 +595,7 @@ const readExcel = async (file, type, name, parentCollectionManager, id) => {
       }
     })
 
-    if (individualSummery) collectionManager.logSummary()
+    if (_config.individualSummery) collectionManager.logSummary()
   } else {
     console.log(`No worksheets found in file: ${name}`)
   }
@@ -472,17 +637,23 @@ async function readAllFiles(id, collectionManager, inputDir) {
   for (const key of Object.keys(inputDir)) {
     const loc = inputDir[key]
     const name = path.basename(loc)
+    console.log(`Reading from folder: [${green(name)}]`)
 
     if (loc && !fs.existsSync(loc)) {
       fs.mkdirSync(loc)
+      console.log(orange("Folder not found, created a new one\n"))
       continue
     }
 
     let [files, names] = _readAllFiles(loc)
 
-    console.log(`Reading from folder: ${name}`)
-
-    if (names.length) console.log(names)
+    if (names.length)
+      console.table(
+        names.reduce((acc, name, i) => {
+          acc[i + 1] = name
+          return acc
+        }, {})
+      )
     else console.log(orange("No file found"))
 
     console.log()
@@ -524,12 +695,33 @@ function mergeRecord(success, collection) {
       writeIfEmpty(oldRecord, record)
     }
   }
+  collection.forEach(
+    (rec) => (rec.__original = JSON.stringify(rec.__original, null, "    "))
+  )
 }
 
 const debugYcSuccessGenerator = useExcelGenerator(exportSchema.scMasterSchema)
-const debugSuccessGenerator = useExcelGenerator(exportSchema.debugSuccessSchema)
-const debugNoDupeSchema = useExcelGenerator(exportSchema.debugNoDupeSchema)
-const debugFailGenerator = useExcelGenerator(exportSchema.debugFailSchema)
+const debugSuccessGenerator = useExcelGenerator(
+  exportSchema.debugSuccessSchema,
+  undefined,
+  3,
+  true,
+  15
+)
+const debugNoDupeSchema = useExcelGenerator(
+  exportSchema.debugNoDupeSchema,
+  undefined,
+  3,
+  true,
+  15
+)
+const debugFailGenerator = useExcelGenerator(
+  exportSchema.debugFailSchema,
+  undefined,
+  3,
+  true,
+  15
+)
 const campusGenerator = useExcelGenerator(exportSchema.contactsc, "body")
 
 function logMapKeys(map) {
@@ -572,6 +764,133 @@ function concatWorkbook(workbook, workbook2) {
   })
 }
 
+const generateTeacherExcel = async () => {
+  const id = generateReadableId()
+  const collectionManager = new CollectionManager()
+
+  console.log("Reading files from input folders... \n")
+
+  await readAllFiles(id, collectionManager, dveInputDir)
+
+  let workbookFailed = null
+
+  const teacherStudentCollection = new Map()
+  const teacherCollection = new Map()
+
+  let count = 0
+
+  if (collectionManager.successCollection.size > 0) {
+    mergeRecord(
+      collectionManager.successCollection,
+      collectionManager.noDupeCollection
+    )
+
+    console.log("Generating excel...\n")
+    const passedSet = new Set()
+
+    for (const [id, student] of collectionManager.noDupeCollection) {
+      // if (student.programmeClass_name === "DEREG") console.log(student)
+      if (student.dereg) continue
+      if (student.generic || student.trade) {
+        const setTeacher = (teacher, student) => {
+          if (!teacher || !teacher.email) return
+
+          if (
+            !student.programmeClass_name ||
+            !student.diploma ||
+            !student.diploma.id
+          ) {
+            console.log(student)
+            throw new Error("Student has teacher but no class or diploma")
+          }
+
+          if (!teacherCollection.has(teacher.email))
+            teacherCollection.set(teacher.email, teacher)
+
+          if (teacherStudentCollection.has(teacher.email))
+            teacherStudentCollection.get(teacher.email).push(student)
+          else teacherStudentCollection.set(teacher.email, [student])
+
+          passedSet.add(id)
+        }
+
+        setTeacher(student.generic, student)
+        setTeacher(student.trade, student)
+      }
+    }
+
+    for (const [id, student] of collectionManager.noDupeCollection) {
+      if (!passedSet.has(id))
+        collectionManager.failedCollection.set(id, student)
+    }
+
+    collectionManager.logSummary()
+    stateOperationResult(collectionManager)
+
+    if (collectionManager.failedCollection.size > 0) {
+      workbookFailed = debugNoDupeSchema({
+        main: collectionManager.failedCollection,
+      })
+    }
+
+    if (teacherCollection.size == 0)
+      return console.log(red("No Teacher Found\n"))
+
+    const promises = []
+
+    if (workbookFailed)
+      promises.push(
+        writeOutput(workbookFailed, "_not_included", undefined, id, true)
+      )
+
+    console.log("It might take some time... \n")
+
+    for (const [email, students] of teacherStudentCollection) {
+      count++
+      // if (count > 1) continue
+
+      const campus = Array.from(new Set(students.map((s) => s.campus))).join(
+        ", "
+      )
+
+      const teacher = teacherCollection.get(email)
+
+      const goodBook = generateTeacherWorkbook(
+        _config.teacherExcel,
+        students.map((s) => ({
+          0: s.cname || s.ename,
+          1: s.diploma?.id,
+          2: s.programmeClass_name,
+          3: s.campus,
+        }))
+      )
+
+      promises.push(
+        writeOutput(
+          goodBook,
+          `電郵老師的excel 表格sample (${email})_${campus}_${teacher.name}`.replace(
+            /[\\/\<\>\|*"\?]/g,
+            "-"
+          ),
+          _config.teacherExcel.config.coveredByCampus
+            ? campus.replace(/[\\/\<\>\|*"\?]/g, "-")
+            : undefined,
+          id,
+          false,
+          _config.teacherExcel.config.password
+        )
+      )
+    }
+    await Promise.all(promises)
+
+    console.log()
+
+    if (collectionManager.successCollection.size > 0 || workbookFailed)
+      if (_config.copyToBackup)
+        moveFilesToBackup(excelDir, id, new Set(Object.values(dveInputDir)))
+  }
+}
+
 const generateMaster = async (fromYc) => {
   const id = generateReadableId()
   const collectionManager = new CollectionManager()
@@ -587,40 +906,25 @@ const generateMaster = async (fromYc) => {
 
   let noDupeCollection = collectionManager.noDupeCollection
 
+  stateOperationResult(collectionManager)
+
   if (collectionManager.successCollection.size > 0) {
     const generator = fromYc ? debugYcSuccessGenerator : debugSuccessGenerator
     workbookSuccess = generator({
       [fromYc ? "總表" : "所有記錄"]: collectionManager.successCollection,
     })
     mergeRecord(collectionManager.successCollection, noDupeCollection)
-    noDupeCollection.forEach(
-      (rec) => (rec.__original = JSON.stringify(rec.__original, null, "    "))
-    )
 
     // console.log('successCollection')
     // logMapKeys(collectionManager.successCollection)
     // console.log('noDupeCollection')
     // logMapKeys(noDupeCollection)
-  } else {
-    console.log(red("No successful records"))
-    console.log()
-  }
-
-  if (collectionManager.successCollection.__hkId?.size > 0) {
-    for (const [key, value] of collectionManager.successCollection.__hkId) {
-      // console.log(key)
-      if (!collectionManager.successCollection.__hkId_found.has(key))
-        collectionManager.failedCollection.set(key, value)
-    }
   }
 
   if (collectionManager.failedCollection.size > 0) {
     workbookFailed = debugFailGenerator({
       main: collectionManager.failedCollection,
     })
-  } else {
-    console.log(green("No failed records"))
-    console.log()
   }
 
   let campusCollection = new Map()
@@ -753,7 +1057,12 @@ const generateMaster = async (fromYc) => {
     await Promise.all(promises)
 
     if (workbookSuccess || workbookUnique || workbookAward || workbookFailed)
-      if (copyToBackup) moveFilesToBackup(excelDir, id)
+      if (_config.copyToBackup)
+        moveFilesToBackup(
+          excelDir,
+          id,
+          new Set(Object.values(fromYc ? ycInputDir : inputDir))
+        )
   }
 }
 
@@ -792,49 +1101,54 @@ function deleteDirectory(src) {
   fs.rmdirSync(src)
 }
 
-function moveFilesToBackup(excelDir, id) {
-  const backupDir = path.join(outputDir, id)
+function moveFilesToBackup(excelDir, id, allowedDirs) {
+  const outputDir = path.join(outputsDir, id)
+  if (!fs.existsSync(outputDir)) {
+    fs.mkdirSync(outputDir)
+  }
+  const backupDir = path.join(outputDir, backupDirName)
   if (!fs.existsSync(backupDir)) {
     fs.mkdirSync(backupDir)
-  }
-  const backupSubDir = path.join(backupDir, backupDirName)
-  if (!fs.existsSync(backupSubDir)) {
-    fs.mkdirSync(backupSubDir)
   }
 
   const entries = fs.readdirSync(excelDir, { withFileTypes: true })
 
   for (let entry of entries) {
     const srcPath = path.join(excelDir, entry.name)
-    const destPath = path.join(backupSubDir, entry.name)
+    const destPath = path.join(backupDir, entry.name)
 
     if (entry.isDirectory()) {
+      if (!allowedDirs?.has(srcPath)) continue
+
       const dirEntries = fs.readdirSync(srcPath)
       if (dirEntries.length > 0) {
         copyDirectory(srcPath, destPath)
-        if (removeInput) {
+        if (_config.removeInput) {
           deleteDirectory(srcPath)
         }
       }
-    } else {
-      fs.copyFileSync(srcPath, destPath)
-      if (removeInput) {
-        fs.unlinkSync(srcPath)
-      }
     }
+    // else I dont think I should care lol
+    // else {
+    //   fs.copyFileSync(srcPath, destPath)
+    //   if (_config.removeInput) {
+    //     fs.unlinkSync(srcPath)
+    //   }
+    // }
   }
 
   console.log(
     ">",
     orange(`Moved inputs to backup folder:`),
-    lightBlue(backupSubDir)
+    lightBlue(backupDir),
+    "\n"
   )
 }
 
-async function writeOutput(data, name, dir, id, useId = true, size) {
+async function writeOutput(data, name, dir, id, useId = true, password = "") {
   if (!data) return
 
-  let outputSubDir = path.join(outputDir, id)
+  let outputSubDir = path.join(outputsDir, id)
   if (!fs.existsSync(outputSubDir)) {
     fs.mkdirSync(outputSubDir)
   }
@@ -851,6 +1165,17 @@ async function writeOutput(data, name, dir, id, useId = true, size) {
     const fileName = `${name}_${useId ? id : current_year}.xlsx`
     const filePath = path.join(outputSubDir, fileName)
     await data.xlsx.writeFile(filePath)
+
+    if (password) {
+      // let t0, t1
+
+      // t0 = performance.now()
+      await protectExcelFile(filePath, password)
+      // t1 = performance.now()
+
+      // console.log(`Writing took: ${t1 - t0} ms`)
+    }
+
     console.log(`> ${green(name)} written to: ${lightBlue(filePath)}`)
   }
 }
@@ -860,6 +1185,29 @@ async function writeOutput(data, name, dir, id, useId = true, size) {
 // Manager
 //
 ///=================================================================================================
+
+function stateOperationResult(collectionManager) {
+  if (collectionManager.successCollection.__hkId?.size > 0) {
+    for (const [key, value] of collectionManager.successCollection.__hkId) {
+      // console.log(key)
+      if (!collectionManager.successCollection.__hkId_found.has(key))
+        collectionManager.failedCollection.set(key, value)
+    }
+  }
+
+  if (
+    collectionManager.successCollection.size == 0 &&
+    collectionManager.failedCollection.size == 0
+  ) {
+    console.log(red("No record\n"))
+  } else {
+    if (collectionManager.successCollection.size == 0)
+      console.log(red("No successful record\n"))
+
+    if (collectionManager.failedCollection.size == 0)
+      console.log(green("No failed record\n"))
+  }
+}
 
 function countTotalRecords(collection) {
   let totalRecords = 0
@@ -1085,21 +1433,26 @@ const askForOption = () => {
   })
 
   return new Promise((resolve, reject) =>
-    rl.question(`請選擇 1-3, 或輸入 0 退出: `, async (option) => {
-      rl.close()
-      console.log()
+    rl.question(
+      `請選擇 ${yellow("1")}-${yellow("3")}, 或輸入 ${red("0")} 退出: `,
+      async (option) => {
+        rl.close()
+        console.log()
 
-      if (option == "0") {
-      } else if (option == "1") {
-        await generateMaster()
-      } else if (option == "2") {
-        await generateMaster(true)
-      } else {
-        await askForOption()
+        if (option == "0") {
+        } else if (option == "1") {
+          await generateMaster()
+        } else if (option == "2") {
+          await generateMaster(true)
+        } else if (option == "3") {
+          await generateTeacherExcel()
+        } else {
+          await askForOption()
+        }
+
+        resolve()
       }
-
-      resolve()
-    })
+    )
   )
 }
 

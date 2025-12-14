@@ -12,7 +12,12 @@ const outputFilename = `${packageName}-${dateString}.exe`
 import { execSync } from "child_process"
 
 try {
-  console.log("Building... \n")
+  console.log("Bundling... \n")
+  execSync(`npx webpack --config webpack.config.js --progress`, {
+    stdio: "inherit",
+    encoding: "utf8",
+  })
+  console.log("\nBuilding... \n")
   execSync(
     `pkg ./dist/bundle/bundle.js --target latest-win-x64 --output dist/${outputFilename}`,
     {
@@ -20,7 +25,7 @@ try {
       encoding: "utf8",
     }
   )
-  console.log("Done. \n")
+  console.log("\nDone. \n")
 } catch (e) {
   console.error(e)
 }
