@@ -224,6 +224,24 @@ export function useExcelGenerator(
   }
 }
 
+const generateDate = (date = new Date()) => {
+  const chiNumbers = ["日", "一", "二", "三", "四", "五", "六"]
+
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, "0")
+  const day = String(date.getDate()).padStart(2, "0")
+  const weekday = chiNumbers[date.getDay()]
+
+  return `${year}年${month}月${day}日（星期${weekday}）`
+}
+
+const _argb = (hexC) => ({ argb: hexC.replace("#", "") })
+const _fill = (color) => ({
+  type: "pattern",
+  pattern: "solid",
+  fgColor: _argb(color),
+})
+
 export function generateTeacherWorkbook(param, rows) {
   const workbook = new ExcelJS.Workbook()
 
@@ -231,7 +249,14 @@ export function generateTeacherWorkbook(param, rows) {
   const title = `葛量洪獎學金 ${granthamYear} \n學生表現評核表`
 
   const startColumn = 2
-  const worksheet = workbook.addWorksheet(title)
+  const worksheet = workbook.addWorksheet(title, {
+    views: [
+      {
+        zoomScale: 80,
+      },
+    ],
+  })
+
   worksheet.properties.defaultRowHeight = 20
   worksheet.columns = dveTeacherMarkingSchema.map((v) => ({
     ...v,
@@ -243,29 +268,59 @@ export function generateTeacherWorkbook(param, rows) {
     horizontal: "center",
     wrapText: true,
   }
+  const bottomCentered = {
+    vertical: "bottom",
+    horizontal: "center",
+    wrapText: true,
+  }
+  const TopCentered = {
+    vertical: "top",
+    horizontal: "center",
+    wrapText: true,
+  }
+  const _noWrap = (t) => ({ ...t, wrapText: false })
+
+  const bgFill = _fill("#FFFFFF")
+  const contactFill = _fill("#D9D9D9")
+
+  const noHeaderFill = _fill("#963634")
+  const yesHeaderFill = _fill("#76933C")
+  const yesSubHeaderNCellFill = _fill("#C4D79B")
+
+  const normalRowFill = _fill("#F2F2F2")
+  const sampleRowFill = _fill("#D9D9D9")
+  const teacherInfoHeaderFill = _fill("#404040")
+  const prefilledHeaderFill = _fill("#C5D9F1")
+
+  const headerFont = {
+    size: 12,
+    bold: true,
+    color: _argb("#000000"),
+  }
+  const headerFontReverse = { ...headerFont, color: _argb("#FFFFFF") }
+  const headerFontSmall = { ...headerFont, size: 11 }
+  const yesSubHeaderItemFont = { ...headerFontSmall, color: _argb("#4F6228") }
+  const headerFontReverseBig = { ...headerFontReverse, size: 20 }
+
+  const contactFont = {
+    size: 8,
+    bold: true,
+    color: _argb("#595959"),
+  }
 
   const fillRow = (i) => {
     const row = worksheet.getRow(i)
     const cell = row.getCell(1)
 
     //to solve weird behavior
-    row.fill = cell.fill = {
-      type: "pattern",
-      pattern: "solid",
-      fgColor: { argb: "FFFFFF" },
-    }
+    row.fill = cell.fill = bgFill
   }
+
   const fillRows = (i, num) => {
     for (let k = 0; k < num; k++) fillRow(i + k)
   }
 
-  const fill = (blue) => ({
-    type: "pattern",
-    pattern: "solid",
-    fgColor: { argb: blue ? "44B3E1" : "D86DCD" },
-  })
-
-  const borderStyle = {
+  const bs = {
     top: { style: "medium", color: { argb: "00000000" } },
     left: { style: "medium", color: { argb: "00000000" } },
     bottom: { style: "medium", color: { argb: "00000000" } },
@@ -298,11 +353,7 @@ export function generateTeacherWorkbook(param, rows) {
 
     cell = row.getCell(startColumn)
     cell.value = contact[i] ?? ""
-    cell.font = {
-      size: 8,
-      bold: true,
-      color: { argb: "595959" },
-    }
+    cell.font = contactFont
   }
 
   i++
@@ -313,6 +364,7 @@ export function generateTeacherWorkbook(param, rows) {
   i++
 
   worksheet.mergeCells(i, startColumn, (i += 3), startColumn + 3)
+  for (let j = i - 4; j < i; j++) worksheet.getRow(i).height = 25 //!check row 7-10
 
   cell = worksheet.getRow(i).getCell(startColumn)
   cell.value = title
@@ -351,21 +403,51 @@ export function generateTeacherWorkbook(param, rows) {
     wrapText: false,
   }
 
-  i += 2
+  i += 1
 
   row = worksheet.getRow(i)
-  row.height = 140
-  row.alignment = centered
+  row.height = 55 //!check row 17
+  const nextRow = worksheet.getRow(i + 1)
+  nextRow.height = 100 //!check row 18
 
   let markingCellIndex, excelEndColumn
 
   fillRows(contact.length + 1, 15)
 
-  // worksheet.getRow(11).fill = {
-  //   type: "pattern",
-  //   pattern: "solid",
-  //   fgColor: { argb: "FFFF00" },
-  // }
+  //filling header
+
+  const headerStyles = {
+    blue: {
+      font: headerFont,
+      fill: prefilledHeaderFill,
+      alignment: centered,
+    },
+    gray: {
+      font: headerFontReverse,
+      fill: teacherInfoHeaderFill,
+      alignment: centered,
+    },
+    no: {
+      font: headerFontReverseBig,
+      fill: noHeaderFill,
+      alignment: centered,
+    },
+    yes: {
+      font: headerFontSmall,
+      fill: yesSubHeaderNCellFill,
+      alignment: centered,
+    },
+    yesItem: {
+      font: yesSubHeaderItemFont,
+      fill: yesSubHeaderNCellFill,
+      alignment: bottomCentered,
+    },
+    yesBanner: {
+      font: headerFontReverseBig,
+      fill: yesHeaderFill,
+      alignment: centered,
+    },
+  }
 
   dveTeacherMarkingSchema.forEach((value, x) => {
     if (!x) return
@@ -373,68 +455,71 @@ export function generateTeacherWorkbook(param, rows) {
     excelEndColumn = startColumn + x - 1 //for the spacer
     cell = row.getCell(excelEndColumn)
 
-    if (value.blue && markingCellIndex === undefined) {
-      markingCellIndex = excelEndColumn
-      worksheet.mergeCells(i - 1, markingCellIndex, i, markingCellIndex)
-      cell.alignment = centered
+    if (value.type == "yes") {
+      if (markingCellIndex === undefined) {
+        markingCellIndex = excelEndColumn
+        worksheet.mergeCells(i - 1, markingCellIndex, i, markingCellIndex)
+
+        cell.value = "100%為上限\n(由開學直至今)"
+        cell.border = { ...bs, top: undefined, bottom: undefined }
+      } else {
+        cell.value = `項目${excelEndColumn - markingCellIndex}`
+        cell.border = { ...bs, bottom: undefined }
+
+        if (x === dveTeacherMarkingSchema.length - 1) {
+          worksheet.mergeCells(
+            i - 1,
+            markingCellIndex + 1,
+            i - 1,
+            excelEndColumn
+          )
+
+          const tempRow = worksheet.getRow(i - 1)
+          tempRow.height = 55 //!check row 16
+
+          let tempCell = tempRow.getCell(markingCellIndex + 1)
+          tempCell.value =
+            "學生表現\n(10=優             7=良             5=常              3=可              1=劣)"
+
+          Object.assign(tempCell, headerStyles.yes)
+          tempCell.border = { ...bs, top: undefined }
+
+          worksheet.mergeCells(
+            i - 1 - 5,
+            markingCellIndex,
+            i - 2,
+            excelEndColumn
+          )
+          tempCell = worksheet.getRow(i - 1 - 5).getCell(markingCellIndex)
+          tempCell.value = `推薦 (請填寫以下部份，包括出席率及項目1-${
+            excelEndColumn - markingCellIndex
+          })`
+          Object.assign(tempCell, headerStyles.yesBanner)
+          tempCell.border = { ...bs, bottom: undefined }
+        }
+      }
+      Object.assign(
+        cell,
+        markingCellIndex == excelEndColumn
+          ? headerStyles.yes
+          : headerStyles.yesItem
+      )
+
+      cell = nextRow.getCell(excelEndColumn)
+      cell.border = { ...bs, top: undefined }
+    } else {
+      worksheet.mergeCells(i, excelEndColumn, i + 1, excelEndColumn)
+      cell.border = bs
     }
 
     cell.value = value.name
-    cell.width = value.width
 
-    cell.border = borderStyle
-    cell.fill = fill(value.blue)
+    Object.assign(cell, headerStyles[value.type] || {})
   })
 
+  i += 1
+
   const recordStartRow = i + 1
-  const markingItemCount = excelEndColumn - markingCellIndex
-
-  i--
-
-  row = worksheet.getRow(i)
-  row.height = 20
-  row.alignment = centered
-
-  for (let y = 0; y < markingItemCount; y++) {
-    cell = row.getCell(y + markingCellIndex + 1)
-
-    cell.value = `項目${y + 1}`
-    cell.border = borderStyle
-    cell.fill = fill(true)
-  }
-
-  i--
-
-  row = worksheet.getRow(i)
-  row.height = 40
-
-  cell = row.getCell(markingCellIndex)
-  cell.value = "100%為上限\n( 由開學直至今)"
-  cell.border = borderStyle
-  cell.fill = fill(true)
-  cell.alignment = centered
-
-  worksheet.mergeCells(i, markingCellIndex + 1, i, excelEndColumn)
-
-  cell = row.getCell(markingCellIndex + 1)
-  cell.value =
-    "學生表現\n(10=優             7=良             5=常              3=可              1=劣)"
-  cell.border = borderStyle
-  cell.fill = fill(true)
-  cell.alignment = centered
-
-  i--
-
-  row = worksheet.getRow(i)
-  row.height = 20
-
-  worksheet.mergeCells(i, markingCellIndex, i, excelEndColumn)
-
-  cell = row.getCell(markingCellIndex)
-  cell.value = "學生表現核表"
-  cell.border = borderStyle
-  cell.fill = fill(true)
-  cell.alignment = centered
 
   i = recordStartRow
 
@@ -476,33 +561,26 @@ export function generateTeacherWorkbook(param, rows) {
         cell.alignment = centered
       }
 
-      cell.fill =
-        x >= markingCellIndex
-          ? isLastRow
-            ? { type: "pattern", pattern: "solid", fgColor: { argb: "B7DEE8" } }
-            : fill(true)
-          : isblank
-          ? null
-          : {
-              type: "pattern",
-              pattern: "solid",
-              fgColor: {
-                argb: isSample ? "D9D9D9" : "F2F2F2",
-              },
-            }
+      cell.fill = isSample
+        ? sampleRowFill
+        : x >= markingCellIndex
+        ? yesSubHeaderNCellFill
+        : isblank
+        ? null
+        : normalRowFill
 
       cell.border = {
-        ...borderStyle,
+        ...bs,
         top: isLastRow
           ? null
-          : i == recordStartRow || x >= markingCellIndex
-          ? borderStyle.top
+          : i == recordStartRow // || x >= markingCellIndex
+          ? bs.top
           : { style: "thin", color: { argb: "808080" } },
         bottom:
           i - recordStartRow === records.length - 2
             ? null
-            : i - recordStartRow === records.length - 1 || x >= markingCellIndex
-            ? borderStyle.bottom
+            : i - recordStartRow === records.length - 1 // || x >= markingCellIndex
+            ? bs.bottom
             : { style: "thin", color: { argb: "808080" } },
       }
     }
@@ -510,15 +588,14 @@ export function generateTeacherWorkbook(param, rows) {
     i++
   }
 
-  i++
+  const deadline = generateDate(param.deadline)
+  const footNote = ["", `*請於${deadline}或之前用電郵直接繳交。`, "", "", ""]
 
-  const footNote = ["", `*請於${param.deadline}或之前用電郵直接繳交。`, "", ""]
-
-  fillRows(i, footNote.length + 10)
+  fillRows(i, footNote.length + 1)
 
   for (let x = 0; x < footNote.length; x++) {
     row = worksheet.getRow(i + 1 + x)
-    row.height = footNote[x] ? 20 : 15
+    // row.height = footNote[x] ? 20 : 15
     row.alignment = {
       vertical: "middle",
     }
@@ -532,17 +609,23 @@ export function generateTeacherWorkbook(param, rows) {
   }
 
   row.border = {
-    bottom: borderStyle.bottom,
+    bottom: bs.bottom,
   }
 
   return workbook
+}
+
+const cellImportantFont = {
+  size: 11,
+  bold: true,
+  color: _argb("#C00000"), //FF0000
 }
 
 const sampleRichText_No = {
   richText: [
     {
       text: "(不推薦→不用填寫)",
-      font: { color: { argb: "7E350E" } },
+      font: cellImportantFont,
     },
   ],
 }
@@ -557,13 +640,7 @@ const samples = [
     5: "XXXXXXXX",
     6: "XXXXX@vtc.edu.hk",
     7: {
-      richText: [
-        { text: "推薦 ", font: { color: { argb: "000000" } } },
-        {
-          text: "(請繼續填寫籃色部份內容)",
-          font: { color: { argb: "FF0000" } },
-        },
-      ],
+      richText: [{ text: "(推薦→不用填寫) ", font: cellImportantFont }],
     },
     8: 80.56,
     9: 8,

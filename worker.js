@@ -1,31 +1,35 @@
+import path from "node:path"
 import {
   Worker,
   isMainThread,
   parentPort,
   workerData,
 } from "node:worker_threads"
-import { fileURLToPath } from "node:url"
 import xlsxPopulate from "xlsx-populate"
+import { fileURLToPath } from "node:url"
 
-const __filename = fileURLToPath(import.meta.url)
+const workerPath =
+  typeof __dirname === "undefined" && typeof process.pkg == "undefined"
+    ? fileURLToPath(import.meta.url)
+    : path.join(__dirname, path.basename(fileURLToPath(import.meta.url)))
 
 async function runWorker() {
   try {
-    const { filePath, password } = workerData
+    const { file, password } = workerData
 
-    const wb = await xlsxPopulate.fromFileAsync(filePath)
-    await wb.toFileAsync(filePath, { password })
+    const wb = await xlsxPopulate.fromDataAsync(file)
+    const buffer = await wb.outputAsync({ password })
 
-    parentPort.postMessage("done")
+    parentPort.postMessage(buffer)
   } catch (err) {
     parentPort.postMessage({ error: err.message })
   }
 }
 
-export function protectExcelFile(filePath, password) {
+export function protectExcelFile(file, password) {
   return new Promise((resolve, reject) => {
-    const worker = new Worker(__filename, {
-      workerData: { filePath, password },
+    const worker = new Worker(workerPath, {
+      workerData: { file, password },
     })
 
     worker.on("message", (msg) => {

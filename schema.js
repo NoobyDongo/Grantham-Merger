@@ -317,8 +317,12 @@ const _vdpId = {
 
 const _dereg = {
   name: dereg,
-  get: (className, error, generic, trade) => {
+  get: (record, className, error, generic, trade) => {
     let isDereg = false
+
+    if (record[dereg] != undefined) {
+      return (isDereg = Boolean(record[dereg]))
+    }
 
     if (className != undefined && className != null) {
       let badClassName = !(
@@ -751,6 +755,7 @@ export const checker = (record) => {
   record.dereg =
     record.campus && record.__programmeClass
       ? _dereg.get(
+          record,
           record.__programmeClass,
           error,
           record.generic,
@@ -851,7 +856,7 @@ export const solver = (
 
   record.dereg =
     campus && programmeClass
-      ? _dereg.get(programmeClass, error, generic, trade) ||
+      ? _dereg.get(row, programmeClass, error, generic, trade) ||
         checkMasterDereg(error, record)
       : false
 
@@ -1242,44 +1247,52 @@ const markingSchema = {
 export const dveTeacherMarkingSchema = [
   {
     name: "spacer",
-    width: 2.5,
+    width: 10,
   },
   {
     name: "學員姓名",
-    width: 15.67,
+    width: 17,
+    type: "blue",
   },
   {
     name: "課程編號",
-    width: 24.22,
+    width: 17,
+    type: "blue",
   },
   {
     name: "現時就讀班別",
-    width: 24.22,
+    width: 17,
+    type: "blue",
   },
   {
     name: "分校",
-    width: 24.22,
+    width: 17,
+    type: "blue",
   },
   {
     name: "填寫老師姓名",
-    width: 23.11,
+    width: 24,
+    type: "gray",
   },
   {
     name: "填寫老師聯絡電話",
-    width: 23.11,
+    width: 24,
+    type: "gray",
   },
   {
     name: "填寫老師電郵",
-    width: 32.11,
+    width: 24,
+    type: "gray",
   },
   {
-    name: "(1) 推薦 →  請填寫「學生表現核表」學生整體出席率及項目1-6\n或\n(2) 不推薦 →  不需要填寫「學生表現核表」, 但請註明不推薦原因",
-    width: 68.56,
+    name: "不推薦 (請在以下填寫原因)",
+    width: 56,
+    type: "no",
   },
   {
     name: "學生整體出席率 % \n(請填實際數值)",
     width: 21.11,
-    blue: true,
+    type: "yes",
   },
   ...Object.values(markingSchema).map((s) => ({
     name:
@@ -1287,7 +1300,7 @@ export const dveTeacherMarkingSchema = [
         //lol
         .replace("(", "\n(") + "\n (1-10分)",
     width: 14,
-    blue: true,
+    type: "yes",
   })),
 ]
 
@@ -1297,8 +1310,8 @@ const scMasterSchema = {
     ename: _base.ename,
     cname: _base.cname,
     hkid: _base.hkId,
-    tsClass: _className.classname1,
-    tsEntry: _className.classname2,
+    tsEntry: _className.classname1,
+    tsClass: _className.classname2,
     sc: _sc,
     campus: _campus,
     diplomaId: _diploma.id,
@@ -1342,6 +1355,13 @@ const scMasterSchema = {
     width: xl,
     set: () => "",
   },
+
+  ..._oriProgrammeClass,
+  dereg: _dereg,
+  ..._warning,
+  ..._id,
+  ..._original,
+  ..._system,
 }
 
 // console.log(scMasterSchema)

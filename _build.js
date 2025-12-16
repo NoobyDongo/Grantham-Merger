@@ -19,7 +19,7 @@ try {
   })
   console.log("\nBuilding... \n")
   execSync(
-    `pkg ./dist/bundle/bundle.js --target latest-win-x64 --output dist/${outputFilename}`,
+    `pkg ./dist/bundle/main.js -c pkg.config.json --target latest-win-x64 --output dist/${outputFilename}`,
     {
       stdio: "inherit",
       encoding: "utf8",

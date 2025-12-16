@@ -1,0 +1,3 @@
+{
+  "scripts": ["dist/bundle/worker.js"]
+}

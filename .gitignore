@@ -12,6 +12,7 @@
 /dist
 /old
 *xls
+*xlsx
 /_output
 /_put your excels here
 /config.json
