@@ -16,7 +16,7 @@ import { protectExcelFile } from "./worker.js"
 import { config } from "./config.js"
 import { yellow, green, orange, red, lightBlue } from "./colors.js"
 import { baseDir, isPkg } from "./base-dir.js"
-// import { exec } from "child_process"
+import { exec } from "child_process"
 
 //========//excel config
 const excelDir = path.join(baseDir, "_put your excels here")
@@ -553,7 +553,7 @@ function concatWorkbook(workbook, workbook2) {
 }
 
 export const generateTeacherExcel = async (
-  limit = 0,
+  limit = 10,
   noFs,
   randomSelect,
   noPwd
@@ -655,9 +655,21 @@ export const generateTeacherExcel = async (
     const promises = []
     const teacherExcelsForMail = []
 
+    let failedFilePath
+
     if (workbookFailed && !noFs)
       promises.push(
-        writeOutput(workbookFailed, "_not_included", undefined, id, true)
+        new Promise(async (resolve) => {
+          const [, path] = await writeOutput(
+            workbookFailed,
+            "_not_included",
+            undefined,
+            id,
+            true
+          )
+          if (path) failedFilePath = path
+          resolve(path)
+        })
       )
 
     console.log("It might take some time... \n")
@@ -720,13 +732,17 @@ export const generateTeacherExcel = async (
               },
             })
 
-          resolve()
+          resolve(path)
         })
       )
     }
     await Promise.all(promises)
 
     console.log()
+
+    if (!noFs && collectionManager.successCollection.size > 0)
+      exec(`start "" "${path.join(outputsDir, id)}"`)
+    if (!noFs && failedFilePath) exec(`start "" "${failedFilePath}"`)
 
     if (collectionManager.successCollection.size > 0 || workbookFailed)
       if (config.copyToBackup && !noFs)
@@ -842,15 +858,30 @@ const generateMaster = async (fromYc) => {
 
     console.log("Generating excel...\n")
 
+    let mainFilePath
+
     const promises = [
-      writeOutput(
-        workbookUnique ?? workbookSuccess,
-        `students(master)`,
-        undefined,
-        id,
-        true
-      ),
-      writeOutput(workbookFailed, "_failed", undefined, id, true),
+      new Promise(async (resolve) => {
+        const [, path] = await writeOutput(
+          workbookUnique ?? workbookSuccess,
+          `students(master)`,
+          undefined,
+          id,
+          true
+        )
+        if (path) mainFilePath = path
+        resolve(path)
+      }),
+      new Promise(async (resolve) => {
+        const [, path] = await writeOutput(
+          workbookFailed,
+          "_failed",
+          undefined,
+          id,
+          true
+        )
+        resolve(path)
+      }),
     ]
 
     if (campusCollection && campusCollection.size > 0)
@@ -859,17 +890,23 @@ const generateMaster = async (fromYc) => {
           [campus]: collection,
         })
         promises.push(
-          writeOutput(
-            workbookCampus,
-            campus.replace("\\", "-").replace("/", "-"),
-            campusDirName,
-            id,
-            false
-          )
+          new Promise(async (resolve) => {
+            const [, path] = await writeOutput(
+              workbookCampus,
+              campus.replace("\\", "-").replace("/", "-"),
+              campusDirName,
+              id,
+              false
+            )
+            resolve(path)
+          })
         )
       }
 
-    await Promise.all(promises)
+    const files = (await Promise.all(promises)).filter(Boolean)
+
+    if (files.length >= 1) exec(`start "" "${path.join(outputsDir, id)}"`)
+    if (mainFilePath) exec(`start "" "${mainFilePath}"`)
 
     if (workbookSuccess || workbookUnique || workbookAward || workbookFailed)
       if (config.copyToBackup)
@@ -969,7 +1006,7 @@ async function writeOutput(
   password = "",
   noWriting
 ) {
-  if (!data) return
+  if (!data) return []
 
   let outputSubDir = path.join(outputsDir, id)
 
