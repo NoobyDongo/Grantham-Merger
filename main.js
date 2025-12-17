@@ -596,6 +596,30 @@ export const generateTeacherExcel = async (
             throw new Error("Student has teacher but no class or diploma")
           }
 
+          const separators = /[-/\\]/
+
+          if (
+            separators.test(`${teacher.name}`) &&
+            separators.test(`${teacher.email}`)
+          ) {
+            const names = `${teacher.name}`.split(separators)
+            const emails = `${teacher.email}`.split(separators)
+
+            if (names.length == emails.length) {
+              const teachers = emails.map((e, i) => ({
+                email: `${e}`.trim(),
+                name: `${names[i]}`.trim(),
+              }))
+
+              for (const t of teachers) {
+                // console.log(teacher, t)
+                setTeacher(t, student)
+              }
+
+              return
+            }
+          }
+
           if (!teacherCollection.has(teacher.email))
             teacherCollection.set(teacher.email, teacher)
 
