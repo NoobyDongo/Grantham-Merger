@@ -1336,16 +1336,26 @@ const askForOption = async () => {
 
   // return false
 
+  console.log(
+    `
+================================
+
+              選項
+
+================================
+    `
+  )
+
   const options = [
-    ["為 YC 製作 Excel", generateMaster],
-    ["結合來自 YC 的 Excel", generateMaster, true],
-    ["為 DVE 教師製作 Excel", generateTeacherExcel],
+    ["生成給 YC SC 的 Excel", generateMaster],
+    [`用來自 YC SC 的 Excel 生成 AY${AY} Master Excel`, generateMaster, true],
+    [`用 AY${AY} Master Excel 生成給 DVE 教師的 Excel`, generateTeacherExcel],
     // ["Email Test", askForMail],
   ]
 
   console.log(
     Object.values(options).reduce((acc, curr, i) => {
-      acc += `${i + 1}) ${curr.shift()}\n`
+      acc += `${i + 1}) ${curr.shift()}\n\n`
       return acc
     }, "")
   )
