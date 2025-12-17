@@ -98,8 +98,8 @@ const inputDir = generatePath(inputDirConfig)
 
 //========//grantham config
 
-export const grantham_start_year = parseInt(config.startYear)
-export const grantham_start_month = parseInt(config.startMonth)
+export const grantham_start_year = parseInt(config.grantham.startYear)
+export const grantham_start_month = parseInt(config.grantham.startMonth)
 
 export const LastAY = `${`${grantham_start_year + 3}`.substring(2)}${`${
   grantham_start_year + 4
@@ -383,7 +383,7 @@ const readExcel = async (file, type, name, parentCollectionManager, id) => {
       }
     })
 
-    if (config.individualSummery) collectionManager.logSummary()
+    if (config.logging.individualSummery) collectionManager.logSummary()
   } else {
     console.log(`No worksheets found in file: ${name}`)
   }
@@ -740,12 +740,12 @@ export const generateTeacherExcel = async (
 
     console.log()
 
-    if (!noFs && collectionManager.successCollection.size > 0)
+    if (config.outputDisplay.displayOutputFolder && !noFs && collectionManager.successCollection.size > 0)
       exec(`start "" "${path.join(outputsDir, id)}"`)
     if (!noFs && failedFilePath) exec(`start "" "${failedFilePath}"`)
 
-    if (collectionManager.successCollection.size > 0 || workbookFailed)
-      if (config.copyToBackup && !noFs)
+    if (config.outputDisplay.displayOutputExcel && collectionManager.successCollection.size > 0 || workbookFailed)
+      if (config.output.copyToBackup && !noFs)
         moveFilesToBackup(excelDir, id, new Set(Object.values(dveInputDir)))
 
     return teacherExcelsForMail
@@ -905,11 +905,13 @@ const generateMaster = async (fromYc) => {
 
     const files = (await Promise.all(promises)).filter(Boolean)
 
-    if (files.length >= 1) exec(`start "" "${path.join(outputsDir, id)}"`)
-    if (mainFilePath) exec(`start "" "${mainFilePath}"`)
+    if (config.outputDisplay.displayOutputFolder && files.length >= 1)
+      exec(`start "" "${path.join(outputsDir, id)}"`)
+    if (config.outputDisplay.displayOutputExcel && mainFilePath)
+      exec(`start "" "${mainFilePath}"`)
 
     if (workbookSuccess || workbookUnique || workbookAward || workbookFailed)
-      if (config.copyToBackup)
+      if (config.output.copyToBackup)
         moveFilesToBackup(
           excelDir,
           id,
@@ -975,7 +977,7 @@ function moveFilesToBackup(excelDir, id, allowedDirs) {
       const dirEntries = fs.readdirSync(srcPath)
       if (dirEntries.length > 0) {
         copyDirectory(srcPath, destPath)
-        if (config.removeInput) {
+        if (config.output.removeInput) {
           deleteDirectory(srcPath)
         }
       }
@@ -983,7 +985,7 @@ function moveFilesToBackup(excelDir, id, allowedDirs) {
     // else I dont think I should care lol
     // else {
     //   fs.copyFileSync(srcPath, destPath)
-    //   if (config.removeInput) {
+    //   if (config.output.removeInput) {
     //     fs.unlinkSync(srcPath)
     //   }
     // }

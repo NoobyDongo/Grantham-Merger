@@ -8,27 +8,55 @@ const __config_file_name = "config.json"
 const numberParser = (value) => (value ? parseInt(value) : 0)
 
 const configs = {
-  startYear: {
-    key: "葛量洪 DVE Enrty 底線（年）",
-    default: new Date().getFullYear() - 4,
-    parser: numberParser,
+  grantham: {
+    key: "篩選標準",
+    content: {
+      startYear: {
+        key: "葛量洪 DVE Enrty 底線（年）",
+        default: new Date().getFullYear() - 4,
+        parser: numberParser,
+      },
+      startMonth: {
+        key: "葛量洪 DVE Enrty 底線（月）",
+        default: 6,
+        parser: numberParser,
+      },
+    },
   },
-  startMonth: {
-    key: "葛量洪 DVE Enrty 底線（月）",
-    default: 6,
-    parser: numberParser,
+  logging: {
+    key: "日誌記錄",
+    content: {
+      individualSummery: {
+        key: "對每個輸入的 Excel 檔案提供總結 (true/false)",
+        default: false,
+      },
+    },
   },
-  copyToBackup: {
-    key: "將輸入資料複製到輸出資料夾 (true/false)",
-    default: true,
+  output: {
+    key: "I/O",
+    content: {
+      copyToBackup: {
+        key: "將輸入資料複製到輸出資料夾 (true/false)",
+        default: true,
+      },
+      removeInput: {
+        key: "每次完成執行時刪除輸入數據 (true/false)",
+        default: false,
+      },
+    },
   },
-  removeInput: {
-    key: "每次完成執行時刪除輸入數據 (true/false)",
-    default: false,
-  },
-  individualSummery: {
-    key: "對每個輸入的 Excel 檔案進行匯總 (true/false)",
-    default: false,
+  outputDisplay: {
+    key: "輸出顯示",
+    content: {
+      displayOutputFolder: {
+        key: "每次完成執行時打開輸出資料夾 (true/false)",
+        default: true,
+      },
+      displayOutputExcel: {
+        key: "每次完成執行時打開輸出 Excel (true/false)",
+        default: false,
+      },
+    },
   },
   teacherExcel: {
     key: "給 Dve 教師 Excel 的選項",
@@ -42,7 +70,7 @@ const configs = {
         default: "0000 0000",
       },
       fax: {
-        key: "聯絡方式（傳真）",
+        key: "VDPO 聯絡方式（傳真）",
         default: "0000 0000",
       },
       deadline: {
@@ -220,10 +248,14 @@ try {
 
   _config = parseOptions(reverseKeyedConfigs, json)
 
-  console.log(`${green("Config Found")}, loaded with these values:`)
+  console.log(
+    `${green(`成功加載設定`)}[${green(__config_file_name)}], 已套用以下選項:\n`
+  )
 } catch (e) {
   console.log(
-    `${orange("Config Not Found")}, creating a new one with default values\n`
+    `${orange("無法加載設定")}[${orange(
+      __config_file_name
+    )}], 已套用預設值並建立新的設定文件\n`
   )
 
   _config = generateDefaultConfig(configs)
