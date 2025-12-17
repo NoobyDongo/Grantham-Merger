@@ -740,11 +740,19 @@ export const generateTeacherExcel = async (
 
     console.log()
 
-    if (config.outputDisplay.displayOutputFolder && !noFs && collectionManager.successCollection.size > 0)
+    if (
+      config.outputDisplay.displayOutputFolder &&
+      !noFs &&
+      collectionManager.successCollection.size > 0
+    )
       exec(`start "" "${path.join(outputsDir, id)}"`)
     if (!noFs && failedFilePath) exec(`start "" "${failedFilePath}"`)
 
-    if (config.outputDisplay.displayOutputExcel && collectionManager.successCollection.size > 0 || workbookFailed)
+    if (
+      (config.outputDisplay.displayOutputExcel &&
+        collectionManager.successCollection.size > 0) ||
+      workbookFailed
+    )
       if (config.output.copyToBackup && !noFs)
         moveFilesToBackup(excelDir, id, new Set(Object.values(dveInputDir)))
 
