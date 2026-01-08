@@ -1,5 +1,6 @@
 // #region Definitions
 
+import path from "path"
 import { grantham_start_month, grantham_start_year } from "./main.js"
 
 ///=================================================================================================
@@ -29,7 +30,6 @@ const enrollment = "期數",
   programme_campus = "上課地點",
   wayout_programme = "詳情",
   master_remark = "評語",
-  programmeClass_name2 = "(總表 DVE Class)",
   //header for class tutor info would already be parsed by remakeTutorHeaders in main.js
   programmeClass_generic = {
     name: "Class Tutor (Generic, Fullname)",
@@ -40,7 +40,8 @@ const enrollment = "期數",
     email: "Email (Trade)",
   },
   awardYear = "(得獎年份)",
-  dereg = "(Dereg/Grad)"
+  dereg = "(Dereg)",
+  debug_programmeClass = "(DVE Class)"
 
 export const remarkRegex = new RegExp(master_remark, "g")
 
@@ -78,19 +79,12 @@ const regex = {
   class_complex: new RegExp(".{2,3}\\/.{2}\\/.{2,4}"),
   // AB123456, AB123456A, AB123456/12/AB
   class_withProgrammeCode: new RegExp(
-    "^[A-Z]{2}\\d{6}[A-Z]?(-|\\s|/\\d{2}(/[A-Z]{2})?)?$",
+    "[A-Z]{2}\\d{6}[A-Z]?(-|\\s|/\\d{2}(/[A-Z]{2})?)?",
     "i"
   ),
-  // seeing new things everyday
-  class_withProgrammeCodeAndClassWithNoSpace: new RegExp(
-    "^[A-Z]{2}\\d{6}[A-Z]?.{2,5}$",
-    "i"
-  ),
-  // AB123456/AB, AB123456/ABCD, AB123456/11AB, AB123456A/1D, AB123456A/A1D, AB123456/ddd2a
-  class_programmeCodeWithClass: new RegExp(
-    "^[A-Z]{2}\\d{6}[A-Z]?/.{2,5}$",
-    "i"
-  ),
+  // AB123456/AB, AB123456 ABCD, AB123456-11AB, AB123456A/1D, AB123456A/A1D, AB123456/ddd2a
+  class_programmeCodeWithClass:
+    /[A-Z]{2}\d{6}.{1}[A-Za-z0-9]+(?=[^A-Za-z0-9\/]|$)/i,
   // A1A, V12c, a-1d, d1, A11A, 1A, 11A
   class_pure: new RegExp("^([A-Z]|[A-Z]-)?\\d{1,2}[A-Z][A-Z]?$", "i"),
   class_veryPure: new RegExp("^[A-Z]{1}$", "i"),
@@ -106,12 +100,15 @@ const regex = {
   masterNo:
     /(dereg|de-reg|defer|quit|withdraw|employ|(?!未)退學|no record|no this student|no data|沒記錄|(?!未)畢業|no student|not found|unable to locate)/i,
 
+  masterOnBreak: /(?!未)休學/i,
+
   hkIdStrict: new RegExp("^[A-Z]{1,2}\\d{6}\\([0-9A]\\)$", "i"),
   hkId: new RegExp("^[A-Z]{1,2}\\d{6}\\(?[0-9A]\\)?$", "i"),
 
   empty: new RegExp("^n[/\\\\]?a$", "i"),
   space: new RegExp(
-    "[\t\n\v\f\r \u00a0\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u200b\u2028\u2029\u3000]+"
+    "[\t\n\v\f\r \u00a0\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u200b\u2028\u2029\u3000]+",
+    "gi"
   ),
 
   campus: new RegExp("^HTI|CCI|ICI|YC\\(.*\\)|IVE\\(.*\\)$", "i"),
@@ -243,19 +240,13 @@ const _base = {
   },
   ename: {
     name: [ename, "English name", standardHeader.ename, ""],
-    get: (record) =>
-      formatSpace(
-        getParsedValue(record, _base.ename)?.replace(regex.space, " ")
-      ),
+    get: (record) => formatSpace(getParsedValue(record, _base.ename)),
     set: (record) => record.ename,
     width: md,
   },
   cname: {
     name: [cname, wayout_cname, "Chinese name", standardHeader.cname, ""],
-    get: (record) =>
-      formatSpace(
-        getParsedValue(record, _base.cname)?.replace(regex.space, " ")
-      ),
+    get: (record) => formatSpace(getParsedValue(record, _base.cname)),
     set: (record) => record.cname,
   },
   hkId: {
@@ -330,7 +321,6 @@ const _dereg = {
         regex.class_veryPure.test(className) ||
         regex.class_complex.test(className) ||
         regex.class_withProgrammeCode.test(className) ||
-        // regex.class_withProgrammeCodeAndClassWithNoSpace.test(className) ||
         regex.class_programmeCodeWithClass.test(className)
       )
 
@@ -338,20 +328,20 @@ const _dereg = {
         regex.no.test(className) || regex.masterNo.test(className)
 
       if (hasCurseWord) {
-        ReturnWarning(
-          error,
-          `Possibly Deregistered Student, please confirm`,
-          errors.critical
-        )
+        ReturnWarning(error, `可能是已Dereg的學生，請確認`, errors.critical)
         isDereg = true
       } else if (badClassName) {
         if (!regex.no.test(className) && !regex.masterNo.test(className)) {
-          ReturnWarning(error, `DVE Class Unexpected Format`, errors.important)
+          ReturnWarning(
+            error,
+            `非常規[DVE_Class]格式，準確度可能會受到影響`,
+            errors.important
+          )
           isDereg = false
         }
       } else if (!hasCurseWord) {
         if (!generic && !trade) {
-          ReturnWarning(error, `DVE Class has No tutor`, errors.minor)
+          ReturnWarning(error, `學生未Dereg，但無導師`, errors.minor)
         }
       }
     }
@@ -401,8 +391,8 @@ const _diploma = {
     get: (record) =>
       removeSpace(
         getParsedValue(record, _diploma.name)
-          ?.replace("（", "(")
-          ?.replace("）", ")")
+          ?.replaceAll("（", "(")
+          ?.replaceAll("）", ")")
       ),
     set: (record) => record.programme?.diploma?.name || record.diploma?.name,
   },
@@ -459,8 +449,8 @@ const _programme = {
         remark
           .slice(1, remark.length - 1)
           .join("-")
-          .replace("（", "(")
-          .replace("）", ")"),
+          .replaceAll("（", "(")
+          .replaceAll("）", ")"),
         remark[remark.length - 1],
       ]
       remark = remark.join("-")
@@ -519,7 +509,7 @@ const [_trade, _generic] = [
 
 const _programmeClass = {
   name: {
-    name: [standardHeader.dveClass, programmeClass_name2],
+    name: [standardHeader.dveClass],
     get: (record) =>
       getParsedValue(record, _programmeClass.name)
         ?.replace(regex.space, " ")
@@ -629,40 +619,17 @@ const checkProgrammeClass = (error, record) => {
   ) {
     ReturnWarning(
       error,
-      `DVE's Class is present with tutor(s), but ${programme_campus} is missing`,
+      `學生有導師，但缺少[${programme_campus}]`,
       errors.important
     )
   }
-  // if (
-  //   !record.awardYear &&
-  //   record.dereg &&
-  //   record.programmeClass &&
-  //   hasTeacher
-  // ) {
-  //   ReturnWarning(
-  //     error,
-  //     `DVE's class doesnt not match the expected format`,
-  //     errors.important
-  //   )
-  // } else if (
-  //   !record.awardYear &&
-  //   record.dereg &&
-  //   record.programmeClass &&
-  //   !hasTeacher
-  // ) {
-  //   ReturnWarning(
-  //     error,
-  //     `DVE's class has no class tutor, student will be deregistered`,
-  //     errors.important
-  //   )
-  // }
 }
 
 const checkEntry = (error, record) => {
   record.__inRange = true
 
   if (!record.__entry) {
-    ReturnWarning(error, `Using default DVE entry`, errors.minor)
+    ReturnWarning(error, `已將空的[DVE Entry]替換為Excel的年份`, errors.minor)
     record.year = record.__year
     record.month = 9
   } else if (
@@ -672,7 +639,7 @@ const checkEntry = (error, record) => {
     record.__inRange = false
     ReturnWarning(
       error,
-      `Out of DVE selection range ${grantham_start_year}/${grantham_start_month}`,
+      `超出Grantham選擇範圍:${grantham_start_year}/${grantham_start_month}`,
       errors.minor
     )
   }
@@ -682,34 +649,10 @@ const checkId = (error, record) => {
   if (!record.className && !record.cname) {
     ReturnError(
       error,
-      `Unique identifier missing, it has no ${className1}/${className2}(TC...) and ${cname}`,
+      `無法制定唯一編號(ID)，缺少(${className1}/${className2}(TC...)及${cname})或HKID`,
       errors.critical
     )
   }
-  // no error so the record falls to the success pool for merging at later stage
-  // if (!record.id) {
-  //   ReturnError(
-  //     error,
-  //     `Cannot create ID for this student, either Chinese name or ${className1}/${className2}(TC...) is missing`,
-  //     errors.critical
-  //   )
-  // }
-}
-
-const checkHkId = (error, record) => {
-  if (record.hkId && !regex.hkId.test(record.hkId)) {
-    ReturnWarning(error, `Unexpected HKID format`, errors.minor)
-  }
-}
-
-const checkClassName = (error, className) => {
-  // if (className && !regex.className.test(className)) {
-  //   ReturnWarning(
-  //     error,
-  //     `Teen's class name is in an unexpected format, it should be in the format of TC...`,
-  //     errors.minor
-  //   )
-  // }
 }
 
 const checkMasterDereg = (error, record) => {
@@ -723,11 +666,7 @@ const checkMasterDereg = (error, record) => {
 
   if (masterRemark && regex.masterNo.test(masterRemark)) {
     //record.__deregByMaster = true
-    ReturnWarning(
-      error,
-      `Student deregistered by 總表 其他評語, please confirm`,
-      errors.important
-    )
+    ReturnWarning(error, `因[總表_其他評論]而被Dereg，請確認`, errors.important)
     return true
   }
   //record.__deregByMaster = false
@@ -786,7 +725,9 @@ export const solver = (
   award,
   file,
   type,
-  operation
+  operation,
+  headerIndex,
+  backupRef
 ) => {
   let awardYear = (award ? _year : null) || _award_year.get(row)
   if (dve) {
@@ -806,7 +747,6 @@ export const solver = (
   let error = {}
 
   let className = _base.className.get(row)
-  checkClassName(error, className)
 
   let id
 
@@ -827,7 +767,7 @@ export const solver = (
     ...entry,
     __entry: entry,
     __file: {
-      [file]: [index],
+      [backupRef]: [headerIndex + index],
     },
     __avg_mark: avgMark,
     __remark: masterRemark,
@@ -861,36 +801,37 @@ export const solver = (
       : false
 
   if (!record.dereg) {
-    record.programmeClass_name = programmeClass
+    record.programmeClass_name = regex.masterOnBreak.test(programmeClass)
+      ? "休學中"
+      : programmeClass?.trim() //.replace(/^\(4\)\s?PTD\s/gi, "")
+
+    const isComplex = regex.class_complex.test(className)
+
     if (record.programmeClass_name && diploma?.id) {
       const code = diploma.id
-      const className = record.programmeClass_name
+
+      const className = isComplex
+        ? record.programmeClass_name
+        : record.programmeClass_name.match(
+            regex.class_programmeCodeWithClass
+          )?.[0] || record.programmeClass_name
+
       const reg = new RegExp(`^${code}`, "i")
 
-      if (reg.test(className) && !regex.class_complex.test(className)) {
+      if (reg.test(className) && !isComplex) {
         record.programmeClass_name = className
           .replace(reg, "")
           .replace(/^[^A-Za-z0-9]+|[^A-Za-z0-9]+$/g, "")
           .trim()
+      } else record.programmeClass_name = className
+
+      if (record.programmeClass_name.split("/").length < 3) {
+        record.programmeClass_name = record.programmeClass_name.replaceAll(
+          "/",
+          " "
+        )
       }
     }
-
-    // I wish i got a list of all the programme codes
-    // if (record.diploma?.id && record.programmeClass_name) {
-    //   record.programmeClass_name = record.programmeClass_name
-    //     .split(" ")
-    //     .filter(
-    //       (c) =>
-    //         c &&
-    //         !(
-    //           c.includes(record.diploma.id) &&
-    //           c.length > record.diploma.id.length * 0.7
-    //         )
-    //     )
-    //     .join(" ")
-    // } else {
-    //   // console.log("no programme class")
-    // }
 
     record.trade = trade
     record.generic = generic
@@ -1008,10 +949,10 @@ const _system = {
     style: "system",
   },
   filename: {
-    name: "(File)",
+    name: "(Files)",
     set: (record) => {
       let files = Object.keys(record.__file).reduce((acc, key) => {
-        var name = key
+        var name = path.basename(path.dirname(key))
         var indexes = record.__file[key]
         acc += `${name}[${indexes.join(", ")}]; `
         return acc
@@ -1024,7 +965,7 @@ const _system = {
 }
 
 const _master_remark = {
-  name: ["(總表 其他評語)", standardHeader.masterRemark],
+  name: ["(其他評語)", standardHeader.masterRemark],
   set: (record) => record.__remark,
   get: (record) => {
     if (record.__remark) return record.__remark
@@ -1056,7 +997,7 @@ const _original = {
     name: "(Original)",
     set: (record) => record.__original,
     width: xs,
-    style: "system",
+    style: "system-h",
   },
 }
 
@@ -1066,7 +1007,7 @@ const _id = {
 
 const _oriProgrammeClass = {
   originalProgrammeClass: {
-    name: `(總表 DVE Class)`,
+    name: debug_programmeClass,
     set: (record) => record.__programmeClass || null,
     style: "system",
   },
@@ -1075,43 +1016,48 @@ const _oriProgrammeClass = {
 const _warning = {
   warning: {
     name: "(Warning)",
-    set: (record) => record.__warning || null,
-    width: xl,
-    style: "warning",
-  },
-  warningLevel: {
-    name: "(Warning Level)",
     set: (record) =>
-      record.__warningLevel ? errorsFlipped[record.__warningLevel] : null,
-    style: "warning",
+      [record.__warning, record.__additional__warning]
+        ?.filter(Boolean)
+        .join("|") || null,
+    width: lg,
+    style: "system",
   },
-  additionalWarning: {
-    name: "(Additional Warning)",
-    set: (record) => record.__additional__warning || null,
-    width: xl,
-    style: "warning",
-  },
+  // warningLevel: {
+  //   name: "(Warning Level)",
+  //   set: (record) =>
+  //     record.__warningLevel ? errorsFlipped[record.__warningLevel] : null,
+  //   style: "warning",
+  // },
+  // additionalWarning: {
+  //   name: "(Additional Warning)",
+  //   set: (record) => record.__additional__warning || null,
+  //   width: xl,
+  //   style: "warning",
+  // },
 }
 
 const _error = {
   error: {
     name: "(Error)",
-    set: (record) => record.__error || null,
-    width: xl,
-    style: "error",
-  },
-  errorLevel: {
-    name: "(Error Level)",
     set: (record) =>
-      record.__errorLevel ? errorsFlipped[record.__errorLevel] : null,
-    style: "error",
+      [record.__error, record.__additional__error]?.filter(Boolean).join("|") ||
+      null,
+    width: lg,
+    style: "system",
   },
-  additionalError: {
-    name: "(Additional Error)",
-    set: (record) => record.__additional__error || null,
-    width: xl,
-    style: "error",
-  },
+  // errorLevel: {
+  //   name: "(Error Level)",
+  //   set: (record) =>
+  //     record.__errorLevel ? errorsFlipped[record.__errorLevel] : null,
+  //   style: "error",
+  // },
+  // additionalError: {
+  //   name: "(Additional Error)",
+  //   set: (record) => record.__additional__error || null,
+  //   width: xl,
+  //   style: "error",
+  // },
 }
 
 const baseExportSchema = {
@@ -1158,25 +1104,28 @@ const allExportSchema = {
   programmeClass_trade_name: _trade.name,
   programmeClass_trade_email: _trade.email,
   awardYear: _award_year,
-  vdpId: _vdpId,
+  // vdpId: _vdpId,
 }
 
 const debugSuccessSchema = {
   ...allExportSchema,
   ..._warning,
-  ..._id,
+  // ..._id,
   ..._original,
   ..._system,
 }
 
 const debugNoDupeSchema = {
-  ...allExportSchema,
-  ..._warning,
-  ..._id,
-  ..._original,
-  ..._system,
+  ...debugSuccessSchema,
 }
 delete debugNoDupeSchema.awardYear
+
+const excludeFromDveSchema = {
+  ...debugNoDupeSchema,
+}
+delete excludeFromDveSchema.avg_mark
+delete excludeFromDveSchema.remark
+delete excludeFromDveSchema.vdpId
 
 const debugAwardSchema = {
   ...debugNoDupeSchema,
@@ -1187,7 +1136,7 @@ const debugFailSchema = {
   // ..._fragileId,
   ...allExportSchema,
   ..._error,
-  ..._id,
+  // ..._id,
   ..._original,
   ..._system,
 }
@@ -1298,7 +1247,7 @@ export const dveTeacherMarkingSchema = [
     name:
       s.name[0]
         //lol
-        .replace("(", "\n(") + "\n (1-10分)",
+        .replaceAll("(", "\n(") + "\n (1-10分)",
     width: 14,
     type: "yes",
   })),
@@ -1345,21 +1294,21 @@ const scMasterSchema = {
   ...addName(
     {
       avgMark: { ..._avg_mark, width: sm },
-      masterRemark: { ..._master_remark, width: xl },
+      masterRemark: { ..._master_remark, width: sm },
     },
     true
   ),
 
   remark: {
     name: ["備註"],
-    width: xl,
+    width: sm,
     set: () => "",
   },
 
   ..._oriProgrammeClass,
   dereg: _dereg,
   ..._warning,
-  ..._id,
+  // ..._id,
   ..._original,
   ..._system,
 }
@@ -1373,6 +1322,7 @@ export const exportSchema = {
     awardYear: _award_year,
     dereg: _dereg,
   }),
+  excludeFromDveSchema: worksheetColumns(excludeFromDveSchema),
   scMasterSchema: worksheetColumns(scMasterSchema),
   debugAwardSchema: worksheetColumns(debugAwardSchema),
   debugNoDupeSchema: worksheetColumns(debugNoDupeSchema),

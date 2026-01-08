@@ -1,8 +1,12 @@
+// =HYPERLINK("__backup/for dve teachers/students(master)_2026-01-07_21-58-09.xlsx#AY2526總表!A12","students(master)_2026-01-07_21-58-09.xlsx[12]")
+
 import ExcelJS from "exceljs"
 
 //will refactor someday... someday...
 import { grantham_start_year } from "./main.js"
-import { dveTeacherMarkingSchema } from "./schema.js"
+import { dveTeacherMarkingSchema, header } from "./schema.js"
+import { config } from "./config.js"
+import path from "path"
 
 const _singleBorder = { style: "medium", color: { argb: "FF000000" } }
 
@@ -70,6 +74,112 @@ const headStyle = (cell, thin) => {
   cell.border = thin ? excelStyle.border.thin : excelStyle.border.full
 }
 
+const colors = {
+  foreground: {
+    system: "#16365C",
+    header: "#000000",
+    normal: "#000000",
+  },
+  background: {
+    system: "#DCE6F1",
+    header: "#FFFFFF",
+    normal: "#F2F2F2",
+    dupe1: "#E4DFEC",
+    dupe2: "#CCC0DA",
+  },
+
+  thinBorder: "#808080",
+  thickBorder: "#000000",
+}
+
+const parseColor = (colors) => {
+  Object.keys(colors).forEach((key) => {
+    if (typeof colors[key] === "object") parseColor(colors[key])
+    else colors[key] = { argb: colors[key].replace("#", "") }
+  })
+}
+parseColor(colors)
+
+const borders = {
+  full: ["top", "left", "bottom", "right"].reduce((acc, key) => {
+    acc[key] = { style: "medium", color: colors.thickBorder }
+    return acc
+  }, {}),
+  thin: ["top", "left", "bottom", "right"].reduce((acc, key) => {
+    acc[key] = { style: "thin", color: colors.thinBorder }
+    return acc
+  }, {}),
+}
+
+const getCellStyles = (thin, centered) => {
+  // const getStyle =
+  //   (ctype, { bold = false, fc, bc } = {}) =>
+  //   (cell) => {
+  //     cell.alignment = {
+  //       vertical: "middle",
+  //       horizontal: "center",
+  //       wrapText: true,
+  //     }
+
+  //     cell.font = {
+  //       color: colors.foreground[fc ?? ctype] ?? colors.foreground.normal,
+  //       size: 10,
+  //       bold,
+  //     }
+
+  //     cell.fill = {
+  //       pattern: "solid",
+  //       type: "pattern",
+  //       fgColor: colors.background[bc ?? ctype] ?? colors.foreground.normal,
+  //     }
+
+  //     cell.border = { ...(thin ? borders.thin : borders.full) }
+  //   }
+
+  const getStyle = (
+    ctype,
+    { bold = false, centered: fcentered, fc, bc } = {}
+  ) => ({
+    alignment: {
+      vertical: fcentered || centered?.vertical ? "middle" : "top",
+      horizontal: fcentered || centered?.horizontal ? "center" : "left",
+      wrapText: true,
+    },
+    font: {
+      color: colors.foreground[fc ?? ctype] ?? colors.foreground.normal,
+      size: 10,
+      bold,
+    },
+    fill: {
+      pattern: "solid",
+      type: "pattern",
+      fgColor: colors.background[bc ?? ctype] ?? colors.foreground.normal,
+    },
+    border: { ...(thin ? borders.thin : borders.full) },
+  })
+
+  return {
+    system: {
+      header: {
+        default: getStyle("system", { bold: true, centered: true }),
+      },
+      body: {
+        default: getStyle("system", { fc: "normal" }),
+      },
+    },
+    normal: {
+      header: {
+        default: getStyle("header", { bold: true, centered: true }),
+      },
+      body: {
+        default: getStyle("normal"),
+        dupe1: getStyle("dupe1"),
+        dupe2: getStyle("dupe1"),
+      },
+    },
+  }
+}
+
 const systemStyle = (cell, header, thin) => {
   headStyle(cell, thin)
   cell.fill.fgColor = { argb: "FFDCE6F1" }
@@ -114,79 +224,148 @@ export function useExcelGenerator(
   staticStyle,
   freezeX = 0,
   thin = false,
-  rowHeight = 15
+  rowHeight = 15,
+  headerHeight = 40,
+  centered = false
 ) {
   const columns = schema.map((column) => ({ ...column }))
-  const stylesIn = columns.map((col) => col._style || null)
+  const columnStyles = columns.map((col) => col._style || null)
+
   let totalRecords = 0
   // let recordNum = 0
 
   function stylizeRow(row, style, height, header = false) {
     totalRecords++
 
+    const isDupe = /^warning\d$/.test(style)
+
     row.height = height
     row.alignment = { vertical: "middle", horizontal: "center" }
     let rowStyle = style || "body"
 
     row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
-      let colStyle = rowStyle
-      if (header || !style) colStyle = stylesIn?.[colNumber - 1] || colStyle
+      let colStyle = colNumber > 1 && isDupe ? "body" : rowStyle
+      if (header || !style || (isDupe && colNumber > 1))
+        colStyle = columnStyles?.[colNumber - 1] || colStyle
       if (colNumber <= columns.length) {
         excelStyle.table[colStyle](cell, header, thin)
       }
     })
   }
 
-  function parseRecord(worksheet, row, style) {
-    // let corrected = false
-    const rowValues = columns.reduce((acc, col, index) => {
-      let value = col.get(row)
-      acc[col.key] = value
-      //   if (col.__style && value) {
-      //     styles[index] = col._style
-      //     corrected = true
-      //   } else {
-      //     styles[index] = stylesIn?.[index] || undefined
-      //   }
-      return acc
-    }, {})
-    // if (corrected) console.log('rowValues', styles)
-    // corrected = false
-    stylizeRow(worksheet.addRow(rowValues), staticStyle || style, rowHeight)
+  let lastFileCell = 0,
+    fileColumnIndex
+
+  const cellStyles = getCellStyles(thin, centered)
+
+  let useDupe1 = false
+  function stylizeRow2(
+    row,
+    {
+      height = rowHeight,
+      isHeader = false,
+      isDupe = false,
+      forcedStyle,
+      forcedOption,
+    }
+  ) {
+    row.height = height
+    row.eachCell({ includeEmpty: true }, (cell, i) => {
+      let [color = "normal", option = ""] =
+        columnStyles[i - 1]?.split("-") || []
+
+      if (forcedStyle) color = forcedStyle
+      if (forcedOption) option = forcedOption
+
+      let cellStyle = structuredClone(
+        cellStyles[color][isHeader ? "header" : "body"]
+      )
+      // console.dir(cellStyle, { depth: null })
+
+      if (i == 1 && isDupe)
+        cellStyle = cellStyle[`dupe${(useDupe1 = !useDupe1) ? 1 : 2}`]
+      else cellStyle = cellStyle.default
+
+      Object.assign(cell, cellStyle)
+
+      if (option) {
+        if (option.includes("h") && !isHeader)
+          cell.font.color = cell.fill.fgColor
+        if (option.includes("o")) cell.alignment.wrapText = false
+      }
+    })
   }
 
-  let warning = true
+  function parseRecord(worksheet, record, isDupe) {
+    const row = worksheet.addRow(
+      columns.reduce((acc, col, index) => {
+        let value = col.get(record)
+        acc[col.key] = value
+
+        if (col.header == "(Files)") fileColumnIndex = index
+
+        return acc
+      }, {})
+    )
+
+    if (staticStyle) stylizeRow(row, staticStyle, rowHeight)
+    else stylizeRow2(row, { isDupe })
+
+    // throw new Error()
+
+    if (config.io.copyToBackup && fileColumnIndex) {
+      //headerRow is always the first row
+
+      const files = record.__file
+        ? Object.keys(record.__file).reduce((prev, fpath, i) => {
+            const locations = record.__file[fpath]
+            const filePath = path.dirname(fpath)
+            const fileName = path.basename(filePath)
+            const sheetName = path.basename(fpath)
+
+            for (const location of locations) {
+              prev.push({
+                name: fileName,
+                path: filePath,
+                sheet: sheetName,
+                loc: location,
+              })
+            }
+
+            return prev
+          }, [])
+        : undefined
+
+      if (!files) return
+
+      const linkStyle = {
+        underline: true,
+        color: { argb: "FF0000FF" },
+      }
+
+      for (const { path, name, sheet, loc } of files) {
+        const cell = row.getCell(fileColumnIndex + 1)
+        Object.assign(cell, structuredClone(cellStyles.system.body.default))
+        cell.font = linkStyle
+        cell.value = {
+          formula: `HYPERLINK("${path}#'${sheet}'!${loc}:${loc}", "${name}[${loc}]")`,
+        }
+        fileColumnIndex++
+      }
+
+      lastFileCell =
+        lastFileCell > fileColumnIndex ? lastFileCell : fileColumnIndex
+    }
+  }
+
   function parseRecords(worksheet, rows) {
     for (const [key, records] of rows) {
-      // console.log('key', key, records.length)
       if (records.length > 1) {
-        for (const r of records) {
-          parseRecord(
-            worksheet,
-            r,
-            key == "no id" ? undefined : warning ? "warning1" : "warning2"
-          )
-        }
-        warning = !warning
-        // recordNum += records.length
+        for (const r of records) parseRecord(worksheet, r, key !== "no id")
         continue
       }
-      // recordNum++
-      let record = records[0] || records
-      parseRecord(
-        worksheet,
-        record,
-        record.__overwritten
-          ? key == "no id"
-            ? undefined
-            : warning
-            ? "warning1"
-            : "warning2"
-          : undefined
-      )
-      if (record.__overwritten) {
-        warning = !warning
-      }
+      const record = records[0] || records
+      parseRecord(worksheet, record, record.__overwritten && key !== "no id")
     }
   }
 
@@ -202,8 +381,11 @@ export function useExcelGenerator(
 
       worksheet.columns = columns
 
-      let header = worksheet.getRow(1)
-      stylizeRow(header, "head", thin ? 40 : 50, true)
+      const header = worksheet.getRow(1)
+      stylizeRow2(header, {
+        height: headerHeight,
+        isHeader: true,
+      })
 
       //console.log('columns', columns, records)
       worksheet.views = [
@@ -217,7 +399,17 @@ export function useExcelGenerator(
       }
 
       parseRecords(worksheet, records)
-      // console.log('TotalRecords', totalRecords, recordNum, records.size)
+
+      if (config.io.copyToBackup) {
+        const fileColIndex = columns.findIndex((a) => a.header === "(Files)")
+        // worksheet.mergeCells(1, fileColIndex + 1, 1, lastFileCell)
+
+        if (fileColIndex >= 0)
+          for (let i = lastFileCell; i >= fileColIndex; i--) {
+            const fileCol = worksheet.getColumn(i + 1)
+            fileCol.width = 40
+          }
+      }
     })
     // console.log(stylesIn)
     return workbook

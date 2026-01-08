@@ -13,10 +13,12 @@ import {
 import { generateTeacherWorkbook, useExcelGenerator } from "./assembler.js"
 import { protectExcelFile } from "./worker.js"
 // import { askForMail } from "./mail.js"
-import { config } from "./config.js"
+import { config, reloadConfig } from "./config.js"
 import { yellow, green, orange, red, lightBlue } from "./colors.js"
 import { baseDir, isPkg } from "./base-dir.js"
 import { exec } from "child_process"
+import XlsxPopulate from "xlsx-populate"
+import { pathToFileURL } from "url"
 
 //========//excel config
 const excelDir = path.join(baseDir, "_put your excels here")
@@ -88,7 +90,17 @@ const ycInputDir = generatePath({
     name: "from YC",
   },
 })
+
 const inputDir = generatePath(inputDirConfig)
+
+;[inputDir, ycInputDir, dveInputDir].forEach((dir) => {
+  for (const loc of Object.values(dir)) {
+    if (loc && !fs.existsSync(loc)) {
+      fs.mkdirSync(loc)
+      continue
+    }
+  }
+})
 
 // Object.keys(inputDirConfig).reduce((acc, key) => {
 //   const config = inputDirConfig[key]
@@ -179,6 +191,7 @@ function extractYear(fileName) {
 const remakeHeaders = (headers) => {
   let email
   let hasDveEntry
+  let hasClass
   let teensClassRowId, confirmedTeensHeader
   const newHeaders = headers.map((rawheader, i) => {
     const header = `${rawheader}`.trim()
@@ -187,6 +200,13 @@ const remakeHeaders = (headers) => {
     //   if (hasDveEntry) return headerRemakeNames.dveEntry
     //   hasDveEntry = true
     // }
+
+    //now we got two "Class" columns
+    if (/班別/.test(header)) {
+      if (hasClass) return "Class"
+      else hasClass = true
+    }
+
     if (/course/i.test(header) && teensClassRowId != undefined) {
       confirmedTeensHeader = true
     } else if (/^programme$/i.test(header)) {
@@ -207,6 +227,8 @@ const remakeHeaders = (headers) => {
     } else if (/generic|genric/i.test(header)) {
       email = "Email (Generic)"
       return "Class Tutor (Generic, Fullname)"
+    } else if (/class/gi.test(header) && !/\(DVE Class\)/i.test(header)) {
+      return "Class"
     }
     return header
   })
@@ -242,17 +264,17 @@ const findDveYear = (rows) => {
   return null
 }
 
+const sanitize = (s) =>
+  s
+    .replaceAll(" ", "")
+    .replaceAll("（", "(")
+    .replaceAll("）", ")")
+    .toLowerCase()
+
 const findHeader = (rows) => {
   const headers = _base_headers.reduce((acc, curr) => {
     if (!curr) return acc
-    acc[
-      curr
-        .trim()
-        .replace(" ", "")
-        .replace("（", "(")
-        .replace("）", ")")
-        .toLowerCase()
-    ] = curr
+    acc[sanitize(curr)] = curr
     return acc
   }, {})
 
@@ -261,23 +283,11 @@ const findHeader = (rows) => {
 
   for (let i = 0; i < rows.length; i++) {
     const row = remakeHeaders(rows[i])
-    const columns = new Set()
 
     const matchingHeaders = row.filter((header) => {
       if (!header) return false
 
-      const raw = header
-        .trim()
-        .toLowerCase()
-        .replace(" ", "")
-        .replace("（", "(")
-        .replace("）", ")")
-
-      // if (columns.has(raw))
-      //   throw new Error(
-      //     `There are multiple columns with the same name: [${header}], please refer to the document for the acceptable column headers`
-      //   )
-      // else columns.add(raw)
+      const raw = sanitize(header)
 
       const match = Boolean(headers[raw])
       if (match) {
@@ -287,12 +297,12 @@ const findHeader = (rows) => {
     })
 
     if (matchingHeaders.length >= 4) {
-      console.log(`Confirmed header: ${row.slice(0, 7).join(", ")}, ...`)
+      console.log(`已確認的欄目:  ${row.slice(0, 7).join(", ")}, ...`)
       return [row.map((col) => matchedHeaders[col] || col), i]
     }
   }
   throw new Error(
-    "No valid header found, please refer to the document for the acceptable column headers"
+    "未找到有效的標題，請參閱文件(https://drive.google.com/drive/folders/1qF9sN49qu_O8Zq23Cou2151fZLWdMME7?usp=sharing)以了解可接受的列標題"
   )
 }
 
@@ -303,20 +313,40 @@ const findHeader = (rows) => {
 ///=================================================================================================
 
 const readExcel = async (file, type, name, parentCollectionManager, id) => {
-  console.log(`Reading file: ${name}, year: ${yellow(extractYear(name))}`)
+  console.log(
+    `文件名稱:      ${yellow(name)}, 年份: ${yellow(extractYear(name))}`
+  )
   const fileBuffer = fs.readFileSync(file)
-
   let workbook
 
   try {
     workbook = xlsx.read(fileBuffer)
   } catch (e) {
-    // workbook = XlsxPopulate.
+    workbook = await new Promise((resolve, reject) =>
+      XlsxPopulate.fromDataAsync(fileBuffer, {
+        password: config.io.passwordIn,
+      })
+        .then(async (workbook) => {
+          const buffer = await workbook.outputAsync()
+          try {
+            if (config.io.removeInputPassword) {
+              fs.writeFileSync(file, buffer)
+            }
+          } catch (e) {
+            reject(e)
+          }
+          resolve(xlsx.read(buffer))
+        })
+        .catch((e) => {
+          console.log(`${red("無法讀取文件，文件可能已損壞或受密碼保護")}`)
+          reject(e)
+        })
+    )
   }
 
   if (workbook.SheetNames.length > 0) {
     console.log(
-      `Worksheets:`,
+      `工作表:       `,
       `[${workbook.SheetNames.map((name) => green(name)).join(", ")}]`
     )
     const worksheet = workbook.Sheets[workbook.SheetNames[0]]
@@ -326,6 +356,7 @@ const readExcel = async (file, type, name, parentCollectionManager, id) => {
 
     const rawRows = xlsx.utils.sheet_to_json(worksheet, {
       header: 1,
+      blankrows: true,
       raw: true,
     })
 
@@ -341,15 +372,21 @@ const readExcel = async (file, type, name, parentCollectionManager, id) => {
 
     const rows = xlsx.utils.sheet_to_json(worksheet, {
       header: header,
+      blankrows: true,
       range: headerIndex + 1,
       raw: true,
     })
 
     const collectionManager = new CollectionManager()
+    const range = xlsx.utils.decode_range(worksheet["!ref"])
+    const actualHeaderRowId = headerIndex + range.s.r + 1
+    const backUpRef = path
+      .join(backupDirName, file.replace(excelDir, ""), workbook.SheetNames[0])
+      .replaceAll("\\", "/")
 
     rows.forEach((row, rowNumber) => {
       if (!year) {
-        console.log(`Year not found in file: ${name}`)
+        console.log(`${red("找不到文件年份")}: ${name}`)
         return
       }
 
@@ -361,7 +398,9 @@ const readExcel = async (file, type, name, parentCollectionManager, id) => {
         useAward,
         name,
         type,
-        id
+        id,
+        actualHeaderRowId,
+        backUpRef
       )
 
       if (record)
@@ -369,7 +408,6 @@ const readExcel = async (file, type, name, parentCollectionManager, id) => {
           parentCollectionManager.addSuccess(record)
           collectionManager.addSuccess(record)
         } else {
-          console.log("failed", error)
           parentCollectionManager.addFailed(record)
           collectionManager.addFailed(record)
         }
@@ -385,7 +423,7 @@ const readExcel = async (file, type, name, parentCollectionManager, id) => {
 
     if (config.logging.individualSummery) collectionManager.logSummary()
   } else {
-    console.log(`No worksheets found in file: ${name}`)
+    console.log(`${red("文件中未能找到工作表")}: ${name}`)
   }
 }
 
@@ -425,11 +463,11 @@ async function readAllFiles(id, collectionManager, inputDir) {
   for (const key of Object.keys(inputDir)) {
     const loc = inputDir[key]
     const name = path.basename(loc)
-    console.log(`Reading from folder: [${green(name)}]`)
+    console.log(`資料夾: [${green(name)}]`)
 
     if (loc && !fs.existsSync(loc)) {
       fs.mkdirSync(loc)
-      console.log(orange("Folder not found, created a new one\n"))
+      console.log(orange("找不到該資料夾，已建立一個空資料夾\n"))
       continue
     }
 
@@ -442,7 +480,7 @@ async function readAllFiles(id, collectionManager, inputDir) {
           return acc
         }, {})
       )
-    else console.log(orange("No file found"))
+    else console.log(orange("沒有找到任何文件"))
 
     console.log()
 
@@ -450,6 +488,8 @@ async function readAllFiles(id, collectionManager, inputDir) {
       await readExcel(file.path, name, file.name, collectionManager, id)
       console.log()
     }
+
+    console.log()
   }
 }
 
@@ -485,40 +525,54 @@ function mergeRecord(success, collection) {
   }
 
   for (const [id, student] of collection) {
+    try {
+      if (student.__original["(Original)"]) {
+        student.__original["(Original)"] = JSON.parse(
+          student.__original["(Original)"]
+        )
+      }
+    } catch (e) {}
+
     student.__original = JSON.stringify(student.__original, null, "    ")
   }
 }
 
+const defaultGeneratorInput = [
+  undefined,
+  3,
+  true,
+  config.format.rowHeight.others,
+  config.format.rowHeight.header,
+  config.format.centered,
+]
+
 const debugFromYcGenerator = useExcelGenerator(
   exportSchema.scMasterSchema,
-  undefined,
-  3,
-  true,
-  15
+  ...defaultGeneratorInput
 )
-
+const excludeFromDveGenerator = useExcelGenerator(
+  exportSchema.excludeFromDveSchema,
+  ...defaultGeneratorInput
+)
 const debugSuccessGenerator = useExcelGenerator(
   exportSchema.debugSuccessSchema,
-  undefined,
-  3,
-  true,
-  15
+  ...defaultGeneratorInput
 )
-const debugNoDupeSchema = useExcelGenerator(
+const debugNoDupeGenerator = useExcelGenerator(
   exportSchema.debugNoDupeSchema,
-  undefined,
-  3,
-  true,
-  15
+  ...defaultGeneratorInput
 )
 const debugFailGenerator = useExcelGenerator(
   exportSchema.debugFailSchema,
-  undefined,
-  3,
-  true,
-  15
+  ...defaultGeneratorInput
 )
-const campusGenerator = useExcelGenerator(exportSchema.contactsc, "body")
+const campusGenerator = useExcelGenerator(
+  exportSchema.contactsc,
+  "body",
+  null,
+  false,
+  config.format.rowHeight.ycCampus
+)
 
 function concatWorkbook(workbook, workbook2) {
   workbook2.eachSheet((worksheet, sheetId) => {
@@ -553,7 +607,7 @@ function concatWorkbook(workbook, workbook2) {
 }
 
 export const generateTeacherExcel = async (
-  limit = 10,
+  limit = 0,
   noFs,
   randomSelect,
   noPwd
@@ -561,7 +615,7 @@ export const generateTeacherExcel = async (
   const id = generateReadableId()
   const collectionManager = new CollectionManager()
 
-  console.log("Reading files from input folders... \n")
+  console.log("正在從輸入資料夾讀取文件... \n")
 
   await readAllFiles(id, collectionManager, dveInputDir)
 
@@ -578,22 +632,68 @@ export const generateTeacherExcel = async (
       collectionManager.noDupeCollection
     )
 
-    console.log("Generating excel...\n")
     const passedSet = new Set()
+
+    // const logStudent = (student) => {
+    //   let rawestData
+
+    //   try {
+    //     rawestData = JSON.parse(student.__original)
+    //     if (rawestData?.length) {
+    //       rawestData.forEach((d) => {
+    //         if (!d) return undefined
+    //         for (const key of Object.keys(d)) {
+    //           if (d[key]?.["(Original)"]) {
+    //             try {
+    //               d[key] = JSON.parse(d[key]["(Original)"])
+    //             } catch (ee) {}
+    //           }
+    //         }
+    //       })
+    //     }
+    //   } catch (e) {}
+
+    //   console.dir(
+    //     {
+    //       ...student,
+    //       __original: rawestData || null,
+    //       // ["ID"]: student.id || `${student.hkId}-${student.cname}`,
+    //       // ["SC"]: student.guide || null,
+    //       // ["Dereg"]: student.dereg ? "Yes" : "No" || null,
+    //       // ["Trade"]: student.trade || null,
+    //       // ["Generic"]: student.generic || null,
+    //       // ["校園"]: student.campus || null,
+    //       // ["DVE 課程"]: student.diploma || null,
+    //       // ["DVE 班級"]: student.programmeClass_name || null,
+    //       // ["數據來源"]: student.__file || null,
+    //       // ["原始數據"]: rawestData || null,
+    //     },
+    //     { depth: null }
+    //   )
+    //   console.log()
+    // }
+
+    const onBreak = []
+    const noClassOrDiploma = []
 
     for (const [id, student] of collectionManager.noDupeCollection) {
       if (student.dereg) continue
-      if (student.generic || student.trade) {
+
+      if (/(?!未)休學/i.test(student.programmeClass_name)) {
+        onBreak.push(student)
+      } else if (student.generic || student.trade) {
         const setTeacher = (teacher, student) => {
           if (!teacher || !teacher.email) return
+
+          // if (student.programmeClass_name?.includes(";")) console.log(student)
 
           if (
             !student.programmeClass_name ||
             !student.diploma ||
             !student.diploma.id
           ) {
-            console.log(student)
-            throw new Error("Student has teacher but no class or diploma")
+            noClassOrDiploma.push(student)
+            // throw new Error("Student has teacher but no class or diploma")
           }
 
           const separators = /[-/\\]/
@@ -640,17 +740,31 @@ export const generateTeacherExcel = async (
         collectionManager.failedCollection.set(id, student)
     }
 
-    collectionManager.logSummary()
-    stateOperationResult(collectionManager)
+    collectionManager.logSummary("Dereg或没有老师的学生/無法讀取")
+
+    if (onBreak.length) {
+      console.log(
+        `${orange("將不會包含在輸出中")}: 學生休學，數量: ${onBreak.length}\n`
+      )
+    }
+    if (noClassOrDiploma.length) {
+      console.log(
+        `${green("將包含在輸出中")}: 學生${green("未dereg")}，有老師但${red(
+          "沒有班級/DVE 課程"
+        )}，數量: ${noClassOrDiploma.length}\n`
+      )
+    }
+
+    console.log("正在生成輸出 Excel...\n")
 
     if (collectionManager.failedCollection.size > 0) {
-      workbookFailed = debugNoDupeSchema({
+      workbookFailed = excludeFromDveGenerator({
         main: collectionManager.failedCollection,
       })
     }
 
     if (teacherCollection.size == 0)
-      return console.log(red("No Teacher Found\n"))
+      return console.log(red("沒有找到任何老師\n"))
 
     const promises = []
     const teacherExcelsForMail = []
@@ -662,7 +776,7 @@ export const generateTeacherExcel = async (
         new Promise(async (resolve) => {
           const [, path] = await writeOutput(
             workbookFailed,
-            "_not_included",
+            "Dereg或没有老师的学生",
             undefined,
             id,
             true
@@ -672,7 +786,7 @@ export const generateTeacherExcel = async (
         })
       )
 
-    console.log("It might take some time... \n")
+    console.log("需要一些時間, 完成後選項選單將再次出現... \n")
 
     let count = 0
     let skip = randomSelect
@@ -703,7 +817,7 @@ export const generateTeacherExcel = async (
 
       const fileName =
         `電郵老師的excel 表格sample (${email})_${campus}_${teacher.name}`.replace(
-          /[\\/\<\>\|*"\?]/g,
+          /[\\\/\<\>\|*"\?]/g,
           "-"
         )
 
@@ -712,12 +826,12 @@ export const generateTeacherExcel = async (
           const [buffer, path] = await writeOutput(
             goodBook,
             fileName,
-            config.teacherExcel.config.coveredByCampus
-              ? campus.replace(/[\\/\<\>\|*"\?]/g, "-")
+            config.teacherExcel.coveredByCampus
+              ? campus.replace(/[\\\/\<\>\|*"\?]/g, "-")
               : undefined,
             id,
             false,
-            noPwd ? null : config.teacherExcel.config.password,
+            noPwd ? null : config.io.passwordOut,
             noFs
           )
 
@@ -738,26 +852,33 @@ export const generateTeacherExcel = async (
     }
     await Promise.all(promises)
 
-    console.log()
-
     if (
       config.outputDisplay.displayOutputFolder &&
       !noFs &&
       collectionManager.successCollection.size > 0
     )
       exec(`start "" "${path.join(outputsDir, id)}"`)
-    if (!noFs && failedFilePath) exec(`start "" "${failedFilePath}"`)
+
+    if (config.outputDisplay.displayOutputExcel && !noFs && failedFilePath)
+      exec(`start "" "${failedFilePath}"`)
 
     if (
       (config.outputDisplay.displayOutputExcel &&
         collectionManager.successCollection.size > 0) ||
       workbookFailed
     )
-      if (config.output.copyToBackup && !noFs)
-        moveFilesToBackup(excelDir, id, new Set(Object.values(dveInputDir)))
+      if (config.io.copyToBackup && !noFs)
+        await moveFilesToBackup(
+          excelDir,
+          id,
+          new Set(Object.values(dveInputDir))
+        )
 
     return teacherExcelsForMail
+  } else {
+    collectionManager.logSummary()
   }
+
   return []
 }
 
@@ -765,7 +886,7 @@ const generateMaster = async (fromYc) => {
   const id = generateReadableId()
   const collectionManager = new CollectionManager()
 
-  console.log("Reading files from input folders... \n")
+  console.log("正在從輸入資料夾中讀取文件... \n")
 
   await readAllFiles(id, collectionManager, fromYc ? ycInputDir : inputDir)
 
@@ -777,7 +898,7 @@ const generateMaster = async (fromYc) => {
   const noDupeCollection = collectionManager.noDupeCollection
 
   combineHkIdRecords(collectionManager, fromYc)
-  stateOperationResult(collectionManager)
+  // stateOperationResult(collectionManager)
 
   if (collectionManager.successCollection.size > 0) {
     const generator = fromYc ? debugFromYcGenerator : debugSuccessGenerator
@@ -834,10 +955,9 @@ const generateMaster = async (fromYc) => {
           campus = new Map()
           campusCollection.set(currentCampus, campus)
         }
-        record.trade = null
-        record.generic = null
-        campus.set(id, record)
-        campusSuccessCollection.set(id, record)
+        const tempRecord = { ...record, trade: null, generic: null }
+        campus.set(id, tempRecord)
+        campusSuccessCollection.set(id, record, tempRecord)
       } else if (notAwarded) {
         campusFailedCollection.set(id, record)
         if (!currentCampus)
@@ -847,7 +967,7 @@ const generateMaster = async (fromYc) => {
       }
     }
 
-    workbookUnique = debugNoDupeSchema({
+    workbookUnique = debugNoDupeGenerator({
       ["所有未獲獎學生"]: nomineeCollection,
       ["所有符合資格學生(包含在YC Excel中)"]: campusSuccessCollection,
       ["所有不符合資格學生"]: campusFailedCollection,
@@ -864,7 +984,7 @@ const generateMaster = async (fromYc) => {
 
     collectionManager.logSummary()
 
-    console.log("Generating excel...\n")
+    console.log("正在生成輸出 Excel...\n")
 
     let mainFilePath
 
@@ -883,7 +1003,7 @@ const generateMaster = async (fromYc) => {
       new Promise(async (resolve) => {
         const [, path] = await writeOutput(
           workbookFailed,
-          "_failed",
+          "_無法讀取",
           undefined,
           id,
           true
@@ -901,10 +1021,11 @@ const generateMaster = async (fromYc) => {
           new Promise(async (resolve) => {
             const [, path] = await writeOutput(
               workbookCampus,
-              campus.replace("\\", "-").replace("/", "-"),
+              campus.replace(/[\\\/]/g, "-"),
               campusDirName,
               id,
-              false
+              false,
+              config.io.passwordOut
             )
             resolve(path)
           })
@@ -919,16 +1040,35 @@ const generateMaster = async (fromYc) => {
       exec(`start "" "${mainFilePath}"`)
 
     if (workbookSuccess || workbookUnique || workbookAward || workbookFailed)
-      if (config.output.copyToBackup)
-        moveFilesToBackup(
+      if (config.io.copyToBackup)
+        await moveFilesToBackup(
           excelDir,
           id,
           new Set(Object.values(fromYc ? ycInputDir : inputDir))
         )
+  } else {
+    collectionManager.logSummary()
   }
 }
 
-function copyDirectory(src, dest) {
+async function getDecryptedBuffer(filePath) {
+  let workbook
+
+  try {
+    workbook = await XlsxPopulate.fromFileAsync(filePath)
+  } catch (error) {
+    try {
+      workbook = await XlsxPopulate.fromFileAsync(filePath, {
+        password: config.io.passwordIn,
+      })
+      return await workbook.outputAsync()
+    } catch (e) {}
+  }
+
+  return false
+}
+
+async function copyDirectory(src, dest) {
   if (!fs.existsSync(dest)) {
     fs.mkdirSync(dest, { recursive: true })
   }
@@ -940,9 +1080,34 @@ function copyDirectory(src, dest) {
     const destPath = path.join(dest, entry.name)
 
     if (entry.isDirectory()) {
-      copyDirectory(srcPath, destPath)
+      await copyDirectory(srcPath, destPath)
     } else {
-      fs.copyFileSync(srcPath, destPath)
+      if (/^~$/.test(path.extname(srcPath))) continue
+      if (/(xlsx|xls)/.test(path.extname(srcPath))) {
+        const buffer = await getDecryptedBuffer(srcPath)
+        if (buffer) {
+          fs.writeFileSync(destPath, buffer)
+        } else fs.copyFileSync(srcPath, destPath)
+
+        const dateMatch = path
+          .basename(srcPath)
+          .match(/\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}/)
+
+        if (dateMatch?.[0]) {
+          const previousBackUp = path.join(
+            outputsDir,
+            dateMatch[0],
+            backupDirName
+          ) //they are gonna clash
+
+          if (fs.existsSync(previousBackUp)) {
+            await copyDirectory(
+              previousBackUp,
+              path.join(path.dirname(destPath), backupDirName)
+            )
+          }
+        }
+      } else fs.copyFileSync(srcPath, destPath)
     }
   }
 }
@@ -963,7 +1128,7 @@ function deleteDirectory(src) {
   fs.rmdirSync(src)
 }
 
-function moveFilesToBackup(excelDir, id, allowedDirs) {
+async function moveFilesToBackup(excelDir, id, allowedDirs) {
   const outputDir = path.join(outputsDir, id)
   if (!fs.existsSync(outputDir)) {
     fs.mkdirSync(outputDir)
@@ -983,9 +1148,10 @@ function moveFilesToBackup(excelDir, id, allowedDirs) {
       if (!allowedDirs?.has(srcPath)) continue
 
       const dirEntries = fs.readdirSync(srcPath)
+
       if (dirEntries.length > 0) {
-        copyDirectory(srcPath, destPath)
-        if (config.output.removeInput) {
+        await copyDirectory(srcPath, destPath)
+        if (config.io.removeInput) {
           deleteDirectory(srcPath)
         }
       }
@@ -1001,8 +1167,8 @@ function moveFilesToBackup(excelDir, id, allowedDirs) {
 
   console.log(
     ">",
-    orange(`Moved inputs to backup folder:`),
-    lightBlue(backupDir),
+    `${orange(`Moved inputs to backup folder`)}:`,
+    lightBlue(pathToFileURL(backupDir).href),
     "\n"
   )
 }
@@ -1052,7 +1218,10 @@ async function writeOutput(
     if (!noWriting) fs.writeFileSync(filePath, buffer)
 
     if (noWriting) console.log(`> Generated ${green(name)}`)
-    else console.log(`> ${green(name)} written to: ${lightBlue(filePath)}`)
+    else
+      console.log(
+        `> ${green(name)}: ${lightBlue(pathToFileURL(filePath).href)}`
+      )
 
     return [buffer, filePath]
   }
@@ -1076,20 +1245,20 @@ function combineHkIdRecords(collectionManager, useHkIdAsId) {
   }
 }
 
-function stateOperationResult(collectionManager) {
-  if (
-    collectionManager.successCollection.size == 0 &&
-    collectionManager.failedCollection.size == 0
-  ) {
-    console.log(red("No record\n"))
-  } else {
-    if (collectionManager.successCollection.size == 0)
-      console.log(red("No successful record\n"))
+// function stateOperationResult(collectionManager) {
+//   if (
+//     collectionManager.successCollection.size == 0 &&
+//     collectionManager.failedCollection.size == 0
+//   ) {
+//     console.log(red("No record\n"))
+//   } else {
+//     if (collectionManager.successCollection.size == 0)
+//       console.log(red("No successful record\n"))
 
-    if (collectionManager.failedCollection.size == 0)
-      console.log(green("No failed record\n"))
-  }
-}
+//     if (collectionManager.failedCollection.size == 0)
+//       console.log(green("No failed record\n"))
+//   }
+// }
 
 function countTotalRecords(collection) {
   let totalRecords = 0
@@ -1158,7 +1327,7 @@ function appendWithFile(files, oldAttr, attribute) {
   if (!attribute) return oldAttr || ""
 
   let filename = Object.keys(files).reduce((acc, key) => {
-    var name = key
+    var name = path.basename(path.dirname(key))
     var indexes = files[key]
     acc += `${name}(${indexes.join(", ")}), `
     return acc
@@ -1247,13 +1416,13 @@ class CollectionManager {
       for (const level in this.warningCollection) {
         for (const warning in this.warningCollection[level]) {
           warningArray.push({
-            Level: level,
-            Warning: warning,
-            Count: this.warningCollection[level][warning],
+            ["嚴重程度"]: level,
+            ["描述"]: warning,
+            ["數量"]: this.warningCollection[level][warning],
           })
         }
       }
-      console.log("Warnings:")
+      console.log("警告:")
       console.table(warningArray)
       console.log()
     }
@@ -1265,29 +1434,29 @@ class CollectionManager {
       for (const level in this.errorCollection) {
         for (const error in this.errorCollection[level]) {
           errorArray.push({
-            Level: level,
-            Error: error,
-            Count: this.errorCollection[level][error],
+            ["嚴重程度"]: level,
+            ["描述"]: error,
+            ["數量"]: this.errorCollection[level][error],
           })
         }
       }
-      console.log("Failed reasons:")
+      console.log("失敗原因:")
       console.table(errorArray)
       console.log()
     }
   }
 
-  logSummary() {
+  logSummary(failedTitle = "無法讀取") {
     const totalSuccessRecords = countTotalRecords(this.successCollection)
     const totalFailedRecords = countTotalRecords(this.failedCollection)
 
     const summary = {
-      Records: totalSuccessRecords,
-      Failed: totalFailedRecords,
-      Students: this.noDupeCollection.size,
+      ["總記錄"]: totalSuccessRecords,
+      ["學生"]: this.noDupeCollection.size,
+      [failedTitle]: totalFailedRecords,
     }
 
-    console.log("Summery:")
+    console.log("概括:")
     console.table(summary)
     console.log()
 
@@ -1297,7 +1466,7 @@ class CollectionManager {
 }
 
 const waitForUserExit = () => {
-  console.log("Press any key to exit...")
+  console.log("按鍵盤任意按鍵退出...")
   process.stdin.setRawMode(true)
   process.stdin.resume()
   process.stdin.on("data", process.exit.bind(process, 0))
@@ -1322,54 +1491,53 @@ export const ask = (question, rline) => {
 }
 
 const askForOption = async () => {
-  // const { file } = (await generateTeacherExcel(1, false, true, true))?.[0] || {}
+  console.log("============================================")
+  console.log()
+  console.log("                    選項")
+  console.log()
+  console.log("============================================\n")
 
-  // if (file) {
-  //   exec(`start "" "${file.path}"`, (err, stdout, stderr) => {
-  //     if (err) {
-  //       console.error(`exec error: ${err}`)
-  //       return
-  //     }
-  //     console.log(`Opened ${file.path}`)
-  //   })
-  // }
-
-  // return false
-
-  console.log(
-    `
-================================
-
-              選項
-
-================================
-    `
-  )
-
-  const options = [
+  let options = [
     ["生成給 YC SC 的 Excel", generateMaster],
     [`用來自 YC SC 的 Excel 生成 AY${AY} Master Excel`, generateMaster, true],
     [`用 AY${AY} Master Excel 生成給 DVE 教師的 Excel`, generateTeacherExcel],
+    // [`--------------------------------`],
+    [`重新載入設定文件`, reloadConfig],
     // ["Email Test", askForMail],
   ]
 
+  let spacer = 0
+
+  console.group()
+
   console.log(
     Object.values(options).reduce((acc, curr, i) => {
-      acc += `${i + 1}) ${curr.shift()}\n\n`
+      if (curr.length < 2) {
+        spacer++
+      } else {
+        acc += `${i + 1 - spacer}) `
+      }
+      acc += `${curr.shift()}\n\n`
       return acc
     }, "")
   )
 
+  console.groupEnd()
+
+  options = options.filter((o) => o.length >= 1)
+
   const option =
     parseInt(
       await ask(
-        `請選擇 ${yellow("1")}-${yellow(options.length)}, 或輸入 ${red(
+        `請選擇 ${yellow("1")}-${yellow(options.length)}, 退出請輸入 ${red(
           "0"
-        )} 退出: `
+        )} / ${red("CTRL + C")}: `
       )
     ) - 1
 
-  if (options[option])
+  // console.log("============================================\n\n")
+
+  if (options[option]?.length)
     return (await options[option].shift()?.(...options[option])) || true
   else if (option >= 0) return await askForOption()
 
